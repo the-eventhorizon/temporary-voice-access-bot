@@ -1,12 +1,19 @@
 import {
   ChannelType,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   PermissionFlagsBits,
   type AutocompleteInteraction,
+  type ButtonInteraction,
   type ChatInputCommandInteraction,
   type Client,
+  type Guild,
   type GuildBasedChannel,
   type GuildTextBasedChannel,
   type Role,
+  StringSelectMenuBuilder,
+  type StringSelectMenuInteraction,
 } from "discord.js";
 import { randomUUID } from "node:crypto";
 import type { AccessDatabase } from "../persistence/database.js";
@@ -109,8 +116,21 @@ export class InteractionHandler {
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
     await interaction.deferReply({ ephemeral: true });
-    const guild = interaction.guild!;
-    const roleId = interaction.options.getString("role", true);
+    const response = await this.submitRequest(
+      interaction.guild!,
+      interaction.user.id,
+      interaction.options.getString("role", true),
+      interaction.options.getChannel("channel")?.id,
+    );
+    await interaction.editReply(response);
+  }
+
+  private async submitRequest(
+    guild: Guild,
+    requesterId: string,
+    roleId: string,
+    selectedChannelId?: string,
+  ): Promise<string> {
     const role = guild.roles.cache.get(roleId);
     const botMember = guild.members.me ?? (await guild.members.fetchMe());
     if (
@@ -119,51 +139,35 @@ export class InteractionHandler {
       !this.database.getRequestableRoles(guild.id).includes(roleId) ||
       !canAssignRole(role, guild.id, botMember.roles.highest.position)
     ) {
-      await interaction.editReply(
-        botMember.permissions.has(PermissionFlagsBits.ManageRoles)
-          ? "That role is not currently configured for temporary access."
-          : "The bot is missing Manage Roles permission. Contact a server administrator.",
-      );
-      return;
+      return botMember.permissions.has(PermissionFlagsBits.ManageRoles)
+        ? "That role is not currently configured for temporary access."
+        : "The bot is missing Manage Roles permission. Contact a server administrator.";
     }
     const channelIds = this.database.getRoleChannels(guild.id, roleId);
-    const selectedChannelId = interaction.options.getChannel("channel")?.id;
     if (channelIds.length === 0) {
-      await interaction.editReply(
-        "This role has no configured target voice channel.",
-      );
-      return;
+      return "This role has no configured target voice channel.";
     }
     if (channelIds.length > 1 && !selectedChannelId) {
-      await interaction.editReply(
-        "Select a target channel because this role has multiple configured channels.",
-      );
-      return;
+      return "Select a target channel because this role has multiple configured channels.";
     }
     const targetChannelId = selectedChannelId ?? channelIds[0]!;
     if (!channelIds.includes(targetChannelId)) {
-      await interaction.editReply(
-        "That voice channel is not associated with the selected role.",
-      );
-      return;
+      return "That voice channel is not associated with the selected role.";
     }
-    const targetChannel = guild.channels.cache.get(targetChannelId) ?? null;
+    const targetChannel = await guild.channels
+      .fetch(targetChannelId)
+      .catch(() => null);
     if (!isVoiceChannel(targetChannel)) {
-      await interaction.editReply(
-        "The configured target channel no longer exists or is not a voice channel.",
-      );
-      return;
+      return "The configured target channel no longer exists or is not a voice channel.";
     }
-    const requester = await guild.members.fetch(interaction.user.id);
+    const requester = await guild.members.fetch(requesterId).catch(() => null);
+    if (!requester)
+      return "Your server membership could not be verified. Try again.";
     if (requester.roles.cache.has(roleId)) {
-      await interaction.editReply("You already have this role.");
-      return;
+      return "You already have this role.";
     }
     if (this.database.getLiveGrant(guild.id, requester.id, roleId)) {
-      await interaction.editReply(
-        "You already have a temporary grant for this role.",
-      );
-      return;
+      return "You already have a temporary grant for this role.";
     }
     if (
       this.database.hasRecentRequest(
@@ -173,23 +177,14 @@ export class InteractionHandler {
         Date.now() - 30_000,
       )
     ) {
-      await interaction.editReply(
-        "Please wait 30 seconds before submitting another request for this role.",
-      );
-      return;
+      return "Please wait 30 seconds before submitting another request for this role.";
     }
     const config = this.database.getGuildConfig(guild.id);
     if (this.database.getApproverRoles(guild.id).length === 0) {
-      await interaction.editReply(
-        "No approver roles are configured. Contact a server administrator.",
-      );
-      return;
+      return "No approver roles are configured. Contact a server administrator.";
     }
     if (!config.approvalChannelId) {
-      await interaction.editReply(
-        "The approval channel is not configured. Contact a server administrator.",
-      );
-      return;
+      return "The approval channel is not configured. Contact a server administrator.";
     }
     const approvalChannel = await guild.channels.fetch(
       config.approvalChannelId,
@@ -198,10 +193,7 @@ export class InteractionHandler {
       !isTextChannel(approvalChannel) ||
       approvalChannel.guildId !== guild.id
     ) {
-      await interaction.editReply(
-        "The configured approval channel is unavailable. Contact an administrator.",
-      );
-      return;
+      return "The configured approval channel is unavailable. Contact an administrator.";
     }
     const now = Date.now();
     const request: AccessRequest = {
@@ -227,10 +219,7 @@ export class InteractionHandler {
         roleId,
         error: error instanceof Error ? error.message : String(error),
       });
-      await interaction.editReply(
-        "You already have a pending request for this role.",
-      );
-      return;
+      return "You already have a pending request for this role.";
     }
     try {
       await this.approvals.postRequest(
@@ -239,9 +228,7 @@ export class InteractionHandler {
         this.database.getApproverRoles(guild.id),
         role.name,
       );
-      await interaction.editReply(
-        `Your request for **${role.name}** in <#${targetChannelId}> was sent. It expires <t:${Math.floor(request.expiresAt / 1000)}:R>.`,
-      );
+      return `Your request for **${role.name}** in <#${targetChannelId}> was sent. It expires <t:${Math.floor(request.expiresAt / 1000)}:R>.`;
     } catch (error) {
       this.database.decideRequest(request.id, "cancelled", null, Date.now());
       log("error", "Could not post approval request", {
@@ -249,10 +236,163 @@ export class InteractionHandler {
         guildId: guild.id,
         error: error instanceof Error ? error.message : String(error),
       });
-      await interaction.editReply(
-        "The request could not be delivered to the approval channel. Please contact an administrator.",
-      );
+      return "The request could not be delivered to the approval channel. Please contact an administrator.";
     }
+  }
+
+  async handlePanelButton(interaction: ButtonInteraction): Promise<void> {
+    if (interaction.customId !== "access-panel:open" || !interaction.guild) {
+      await interaction.reply({
+        content: "This request panel is invalid.",
+        ephemeral: true,
+      });
+      return;
+    }
+    const botMember =
+      interaction.guild.members.me ??
+      (await interaction.guild.members.fetchMe());
+    if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      await interaction.reply({
+        content: "The bot is missing Manage Roles permission.",
+        ephemeral: true,
+      });
+      return;
+    }
+    const roleChoices = this.database
+      .getRequestableRoles(interaction.guild.id)
+      .map((roleId) => interaction.guild!.roles.cache.get(roleId))
+      .filter((role): role is Role => Boolean(role))
+      .filter((role) =>
+        canAssignRole(
+          role,
+          interaction.guild!.id,
+          botMember.roles.highest.position,
+        ),
+      )
+      .slice(0, 25);
+    if (roleChoices.length === 0) {
+      await interaction.reply({
+        content: "No access roles are currently available to request.",
+        ephemeral: true,
+      });
+      return;
+    }
+    await interaction.reply({
+      content:
+        "First choose the access role, then choose its target voice channel.",
+      components: [
+        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId("access-panel:role")
+            .setPlaceholder("Choose an access role")
+            .addOptions(
+              roleChoices.map((role) => ({
+                label: role.name.slice(0, 100),
+                value: role.id,
+              })),
+            ),
+        ),
+      ],
+      ephemeral: true,
+    });
+  }
+
+  async handlePanelSelection(
+    interaction: StringSelectMenuInteraction,
+  ): Promise<void> {
+    if (!interaction.guild || !interaction.customId.startsWith("access-panel:"))
+      return;
+    const [, selectionType, roleId, ownerId] = interaction.customId.split(":");
+    if (selectionType === "role") {
+      const selectedRoleId = interaction.values[0];
+      if (!selectedRoleId) {
+        await interaction.update({
+          content: "Choose a configured role.",
+          components: [],
+        });
+        return;
+      }
+      const role = interaction.guild.roles.cache.get(selectedRoleId);
+      const botMember =
+        interaction.guild.members.me ??
+        (await interaction.guild.members.fetchMe());
+      if (
+        !role ||
+        !this.database
+          .getRequestableRoles(interaction.guild.id)
+          .includes(selectedRoleId) ||
+        !canAssignRole(
+          role,
+          interaction.guild.id,
+          botMember.roles.highest.position,
+        )
+      ) {
+        await interaction.update({
+          content: "That role is no longer available to request.",
+          components: [],
+        });
+        return;
+      }
+      const channels = this.database
+        .getRoleChannels(interaction.guild.id, selectedRoleId)
+        .map((channelId) => interaction.guild!.channels.cache.get(channelId))
+        .filter((channel): channel is GuildBasedChannel =>
+          isVoiceChannel(channel ?? null),
+        )
+        .slice(0, 25);
+      if (channels.length === 0) {
+        await interaction.update({
+          content: "This role has no available target voice channels.",
+          components: [],
+        });
+        return;
+      }
+      await interaction.update({
+        content: `Choose the voice channel for **${role.name}**:`,
+        components: [
+          new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId(
+                `access-panel:channel:${selectedRoleId}:${interaction.user.id}`,
+              )
+              .setPlaceholder("Choose a target voice channel")
+              .addOptions(
+                channels.map((channel) => ({
+                  label: channel.name.slice(0, 100),
+                  value: channel.id,
+                })),
+              ),
+          ),
+        ],
+      });
+      return;
+    }
+    if (
+      selectionType !== "channel" ||
+      ownerId !== interaction.user.id ||
+      !roleId
+    ) {
+      await interaction.reply({
+        content: "This selection has expired or is not yours.",
+        ephemeral: true,
+      });
+      return;
+    }
+    const targetChannelId = interaction.values[0];
+    if (!targetChannelId) {
+      await interaction.update({
+        content: "Choose a target voice channel.",
+        components: [],
+      });
+      return;
+    }
+    const response = await this.submitRequest(
+      interaction.guild,
+      interaction.user.id,
+      roleId,
+      targetChannelId,
+    );
+    await interaction.update({ content: response, components: [] });
   }
 
   private async configure(
@@ -332,6 +472,46 @@ export class InteractionHandler {
       else this.database.removeApproverRole(guild.id, role.id);
       await interaction.reply({
         content: `${subcommand === "approver-role" ? "Added" : "Removed"} <@&${role.id}> ${subcommand === "approver-role" ? "as an approver role" : "from approver roles"}.`,
+        ephemeral: true,
+      });
+      return;
+    }
+    if (subcommand === "request-panel") {
+      const channel = interaction.options.getChannel("channel", true);
+      if (!isTextChannel(channel) || channel.guildId !== guild.id) {
+        await interaction.reply({
+          content: "Choose a server text channel.",
+          ephemeral: true,
+        });
+        return;
+      }
+      const permissions = channel.permissionsFor(botMember);
+      if (
+        !permissions?.has(PermissionFlagsBits.ViewChannel) ||
+        !permissions.has(PermissionFlagsBits.SendMessages)
+      ) {
+        await interaction.reply({
+          content:
+            "The bot needs View Channel and Send Messages in that channel.",
+          ephemeral: true,
+        });
+        return;
+      }
+      await channel.send({
+        content:
+          "**Temporary voice access**\nClick below to choose an access role and target voice channel. Your request will be sent to the configured approvers.",
+        components: [
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setCustomId("access-panel:open")
+              .setLabel("Request access")
+              .setStyle(ButtonStyle.Primary),
+          ),
+        ],
+        allowedMentions: { parse: [] },
+      });
+      await interaction.reply({
+        content: `Posted the access request panel in <#${channel.id}>.`,
         ephemeral: true,
       });
       return;

@@ -68,6 +68,7 @@ Per-server timer values are persisted and changed with `/access-config timers`; 
 - `/access-config remove-mapping role:<role> channel:<voice channel>` removes one mapping; the role stops being requestable when its final mapping is removed.
 - `/access-config approver-role role:<role>` and `/access-config remove-approver-role role:<role>` configure eligible approver roles.
 - `/access-config approval-channel channel:<text channel>` selects where approval messages are posted.
+- `/access-config request-panel channel:<text channel>` posts a persistent **Request access** button. Members choose a configured role and then one of its target voice channels using ephemeral select menus; the normal request checks and approval workflow are used.
 - `/access-config timers initial-join-seconds:<n> departure-grace-seconds:<n> request-expiration-seconds:<n>` changes per-server timers.
 - `/access-config view` displays configured settings.
 - `/access-status` displays pending requests, live grants, deadlines, and cleanup problems.
@@ -76,6 +77,8 @@ Per-server timer values are persisted and changed with `/access-config timers`; 
 All `/access-config`, `/access-status`, and `/access-cancel` operations require the Discord Administrator permission. Configuration also validates channel types, managed/privileged roles, and bot role hierarchy. A member can approve or deny only while holding one of the configured approver roles and currently occupying the exact requested target channel. This is rechecked at button-click time.
 
 Repeated requests for the same role are rate-limited for 30 seconds, including after a prior request has been decided.
+
+The request panel is a regular bot message and its button remains usable across bot restarts. Run `/access-config request-panel` again to post another copy in a different channel. Discord select menus support at most 25 options, so each menu displays up to 25 configured roles or voice channels.
 
 Discord only permits autocomplete for string, integer, and number slash-command options—not role-typed options. Therefore the request role is selected from Discord's dynamic string autocomplete, populated exclusively from the configured roles, and the selected role ID is revalidated on command execution. This is not treated as authorization.
 

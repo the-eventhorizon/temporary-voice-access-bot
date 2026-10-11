@@ -73,7 +73,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } else if (interaction.isChatInputCommand()) {
       await interactions.handleCommand(interaction);
     } else if (interaction.isButton()) {
-      await approvals.handleButton(interaction);
+      if (interaction.customId.startsWith("access-panel:")) {
+        await interactions.handlePanelButton(interaction);
+      } else {
+        await approvals.handleButton(interaction);
+      }
+    } else if (interaction.isStringSelectMenu()) {
+      await interactions.handlePanelSelection(interaction);
     }
   } catch (error) {
     log("error", "Interaction handler failed", {

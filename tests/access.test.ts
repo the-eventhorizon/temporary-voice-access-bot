@@ -10,6 +10,7 @@ import type {
   Guild,
   GuildMember,
   Role,
+  StringSelectMenuInteraction,
   VoiceState,
 } from "discord.js";
 import { AccessDatabase } from "../src/persistence/database.js";
@@ -20,6 +21,7 @@ import type {
 import { GrantLifecycle } from "../src/services/grant-lifecycle.js";
 import { canAssignRole } from "../src/services/role-policy.js";
 import { ApprovalWorkflow } from "../src/interactions/approval.js";
+import { InteractionHandler } from "../src/interactions/handler.js";
 
 const makeDatabase = () => {
   const directory = mkdtempSync(join(tmpdir(), "access-bot-test-"));
@@ -521,6 +523,108 @@ test("eligible approval grants the role and persists the initial-join deadline",
   assert.equal(harness.addRoleCalls, 1);
   assert.equal(grant?.state, "awaiting_initial_join");
   assert.ok(grant?.deadlineAt && grant.deadlineAt > Date.now());
+});
+
+test("request panel selects a mapped voice channel and submits through normal approval flow", async (context) => {
+  const { database, cleanup } = makeDatabase();
+  context.after(cleanup);
+  database.addRoleChannel("guild-1", "role-1", "voice-1");
+  database.addRoleChannel("guild-1", "role-1", "voice-2");
+  database.addApproverRole("guild-1", "approver-role");
+  database.updateGuildConfig("guild-1", {
+    approvalChannelId: "approval-channel",
+  });
+
+  const role = {
+    id: "role-1",
+    name: "Scrim Spectator",
+    managed: false,
+    position: 1,
+    permissions: { any: () => false },
+  } as unknown as Role;
+  const voiceChannels = [
+    { id: "voice-1", name: "Scrim One", type: ChannelType.GuildVoice },
+    { id: "voice-2", name: "Scrim Two", type: ChannelType.GuildStageVoice },
+  ];
+  let postedApproval = false;
+  const approvalChannel = {
+    id: "approval-channel",
+    guildId: "guild-1",
+    isTextBased: () => true,
+    send: async () => {
+      postedApproval = true;
+      return { id: "approval-message" };
+    },
+  };
+  const requester = {
+    id: "user-1",
+    roles: {
+      cache: new Collection<string, Role>(),
+      add: async () => {},
+      remove: async () => {},
+    },
+  };
+  const botMember = {
+    permissions: { has: () => true },
+    roles: { highest: { position: 10 } },
+  };
+  const guild = {
+    id: "guild-1",
+    roles: { cache: new Collection([["role-1", role]]) },
+    members: {
+      me: botMember,
+      fetch: async () => requester,
+    },
+    channels: {
+      cache: new Collection([
+        ...voiceChannels.map((channel) => [channel.id, channel] as const),
+        ["approval-channel", approvalChannel] as const,
+      ]),
+      fetch: async (id: string) =>
+        id === "approval-channel"
+          ? approvalChannel
+          : (voiceChannels.find((channel) => channel.id === id) ?? null),
+    },
+  } as unknown as Guild;
+  const client = { guilds: { fetch: async () => guild } } as unknown as Client;
+  const lifecycle = new GrantLifecycle(client, database);
+  const approvals = new ApprovalWorkflow(client, database, lifecycle);
+  const handler = new InteractionHandler(
+    client,
+    database,
+    approvals,
+    lifecycle,
+  );
+
+  let roleStep: { content?: string; components?: unknown[] } = {};
+  await handler.handlePanelSelection({
+    customId: "access-panel:role",
+    values: ["role-1"],
+    guild,
+    user: { id: "user-1" },
+    update: async (response: typeof roleStep) => {
+      roleStep = response;
+    },
+  } as unknown as StringSelectMenuInteraction);
+  assert.match(roleStep.content ?? "", /Scrim Spectator/);
+  assert.ok(roleStep.components?.length);
+
+  let completion = "";
+  await handler.handlePanelSelection({
+    customId: "access-panel:channel:role-1:user-1",
+    values: ["voice-2"],
+    guild,
+    user: { id: "user-1" },
+    update: async (response: { content?: string }) => {
+      completion = response.content ?? "";
+    },
+  } as unknown as StringSelectMenuInteraction);
+  assert.match(
+    completion,
+    /request for \*\*Scrim Spectator\*\* in <#voice-2> was sent/,
+  );
+  assert.equal(database.listPendingRequests()[0]?.targetChannelId, "voice-2");
+  assert.equal(postedApproval, true);
 });
 
 test("an approver who leaves the target VC before accepting is rejected", async (context) => {

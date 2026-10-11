@@ -97,6 +97,21 @@ export const accessConfigCommand = new SlashCommandBuilder()
   )
   .addSubcommand((subcommand) =>
     subcommand
+      .setName("request-panel")
+      .setDescription("Post a persistent temporary access request button")
+      .addChannelOption((option) =>
+        option
+          .setName("channel")
+          .setDescription("Text channel where members can request access")
+          .setRequired(true)
+          .addChannelTypes(
+            ChannelType.GuildText,
+            ChannelType.GuildAnnouncement,
+          ),
+      ),
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
       .setName("timers")
       .setDescription("Configure request and grant timers")
       .addIntegerOption((option) =>
