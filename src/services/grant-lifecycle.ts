@@ -495,9 +495,9 @@ export class GrantLifecycle {
     grant: TemporaryGrant,
     error: unknown,
   ): Promise<void> {
-    const channelId = this.database.getGuildConfig(
-      grant.guildId,
-    ).approvalChannelId;
+    const channelId = this.database.getRequest(
+      grant.requestId,
+    )?.messageChannelId;
     if (!channelId) return;
     try {
       const channel = await this.client.channels.fetch(channelId);

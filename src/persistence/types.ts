@@ -12,7 +12,6 @@ export type GrantState =
 
 export interface GuildConfig {
   guildId: string;
-  approvalChannelId: string | null;
   initialJoinTimeoutSeconds: number;
   departureGracePeriodSeconds: number;
   requestExpirationSeconds: number;

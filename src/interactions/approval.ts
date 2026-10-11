@@ -45,12 +45,11 @@ export class ApprovalWorkflow {
   async postRequest(
     request: AccessRequest,
     channel: GuildTextBasedChannel,
-    approverRoleIds: string[],
     roleName: string,
   ): Promise<string> {
-    const approverMentions = approverRoleIds.map((id) => `<@&${id}>`).join(" ");
+    const approverRoleId = request.roleId;
     const message = await channel.send({
-      content: `${approverMentions}\nNew temporary access request`,
+      content: `<@&${approverRoleId}>\nNew temporary access request`,
       embeds: [
         new EmbedBuilder()
           .setTitle("Voice access request")
@@ -60,7 +59,10 @@ export class ApprovalWorkflow {
           .setFooter({ text: `Request ID: ${request.id} • Pending` }),
       ],
       components: approvalComponents(request.id),
-      allowedMentions: { users: [request.requesterId], roles: approverRoleIds },
+      allowedMentions: {
+        users: [request.requesterId],
+        roles: [approverRoleId],
+      },
     });
     this.database.setRequestMessageId(request.id, channel.id, message.id);
     this.schedule(request.id, request.expiresAt);
@@ -99,14 +101,13 @@ export class ApprovalWorkflow {
     const approver = await interaction.guild.members
       .fetch(interaction.user.id)
       .catch(() => null);
-    const approverRoles = this.database.getApproverRoles(request.guildId);
     if (
       !approver ||
-      !approverRoles.some((roleId) => approver.roles.cache.has(roleId)) ||
+      !approver.roles.cache.has(request.roleId) ||
       approver.voice.channelId !== request.targetChannelId
     ) {
       await interaction.editReply(
-        "You must have a configured approver role and be in the target voice channel.",
+        "You must have the requested access role and be in the target voice channel.",
       );
       return;
     }
@@ -149,9 +150,7 @@ export class ApprovalWorkflow {
       !requester ||
       !role ||
       !currentApprover ||
-      !this.database
-        .getApproverRoles(request.guildId)
-        .some((roleId) => currentApprover.roles.cache.has(roleId)) ||
+      !currentApprover.roles.cache.has(request.roleId) ||
       currentApprover.voice.channelId !== request.targetChannelId ||
       (targetChannel?.type !== ChannelType.GuildVoice &&
         targetChannel?.type !== ChannelType.GuildStageVoice) ||

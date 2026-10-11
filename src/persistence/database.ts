@@ -67,6 +67,8 @@ const migrations = [
     CREATE INDEX grant_deadlines ON temporary_grants(state, deadline_at);
     CREATE INDEX request_deadlines ON access_requests(status, expires_at);
   `,
+  "DROP TABLE IF EXISTS approver_roles;",
+  "ALTER TABLE guild_config DROP COLUMN approval_channel_id;",
 ];
 
 function parseRequest(row: Record<string, unknown>): AccessRequest {
@@ -110,11 +112,11 @@ function parseGrant(row: Record<string, unknown>): TemporaryGrant {
 
 export class AccessDatabase {
   private readonly db: Database.Database;
-  private readonly defaults: Omit<GuildConfig, "guildId" | "approvalChannelId">;
+  private readonly defaults: Omit<GuildConfig, "guildId">;
 
   constructor(
     path: string,
-    defaults: Omit<GuildConfig, "guildId" | "approvalChannelId"> = {
+    defaults: Omit<GuildConfig, "guildId"> = {
       initialJoinTimeoutSeconds: 90,
       departureGracePeriodSeconds: 90,
       requestExpirationSeconds: 300,
@@ -160,10 +162,6 @@ export class AccessDatabase {
       .get(guildId) as Record<string, unknown>;
     return {
       guildId,
-      approvalChannelId:
-        row.approval_channel_id === null
-          ? null
-          : String(row.approval_channel_id),
       initialJoinTimeoutSeconds: Number(row.initial_join_timeout_seconds),
       departureGracePeriodSeconds: Number(row.departure_grace_period_seconds),
       requestExpirationSeconds: Number(row.request_expiration_seconds),
@@ -178,11 +176,10 @@ export class AccessDatabase {
     const next = { ...current, ...update };
     this.db
       .prepare(
-        `UPDATE guild_config SET approval_channel_id = ?, initial_join_timeout_seconds = ?,
+        `UPDATE guild_config SET initial_join_timeout_seconds = ?,
          departure_grace_period_seconds = ?, request_expiration_seconds = ? WHERE guild_id = ?`,
       )
       .run(
-        next.approvalChannelId,
         next.initialJoinTimeoutSeconds,
         next.departureGracePeriodSeconds,
         next.requestExpirationSeconds,
@@ -209,6 +206,16 @@ export class AccessDatabase {
 
   addRoleChannel(guildId: string, roleId: string, channelId: string): void {
     this.db.transaction(() => {
+      const existing = this.db
+        .prepare(
+          "SELECT role_id FROM role_channels WHERE guild_id = ? AND channel_id = ? AND role_id != ? LIMIT 1",
+        )
+        .get(guildId, channelId, roleId) as { role_id: string } | undefined;
+      if (existing) {
+        throw new Error(
+          `Voice channel ${channelId} is already assigned to role ${existing.role_id}`,
+        );
+      }
       this.addRequestableRole(guildId, roleId);
       this.db
         .prepare(
@@ -234,20 +241,6 @@ export class AccessDatabase {
     })();
   }
 
-  addApproverRole(guildId: string, roleId: string): void {
-    this.db
-      .prepare(
-        "INSERT OR IGNORE INTO approver_roles (guild_id, role_id) VALUES (?, ?)",
-      )
-      .run(guildId, roleId);
-  }
-
-  removeApproverRole(guildId: string, roleId: string): void {
-    this.db
-      .prepare("DELETE FROM approver_roles WHERE guild_id = ? AND role_id = ?")
-      .run(guildId, roleId);
-  }
-
   getRequestableRoles(guildId: string): string[] {
     return (
       this.db
@@ -268,6 +261,15 @@ export class AccessDatabase {
     ).map(({ channel_id }) => channel_id);
   }
 
+  getRoleForChannel(guildId: string, channelId: string): string | null {
+    const rows = this.db
+      .prepare(
+        "SELECT role_id FROM role_channels WHERE guild_id = ? AND channel_id = ?",
+      )
+      .all(guildId, channelId) as { role_id: string }[];
+    return rows.length === 1 ? rows[0]!.role_id : null;
+  }
+
   getAllRoleMappings(
     guildId: string,
   ): Array<{ roleId: string; channelId: string }> {
@@ -278,16 +280,6 @@ export class AccessDatabase {
         )
         .all(guildId) as { role_id: string; channel_id: string }[]
     ).map((row) => ({ roleId: row.role_id, channelId: row.channel_id }));
-  }
-
-  getApproverRoles(guildId: string): string[] {
-    return (
-      this.db
-        .prepare(
-          "SELECT role_id FROM approver_roles WHERE guild_id = ? ORDER BY role_id",
-        )
-        .all(guildId) as { role_id: string }[]
-    ).map(({ role_id }) => role_id);
   }
 
   createRequest(request: AccessRequest): void {

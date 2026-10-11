@@ -11,7 +11,7 @@ A TypeScript/discord.js bot that grants configured Discord roles temporarily aft
 
 Requests transition from `pending` to `approved`, `denied`, `expired`, or `cancelled`. A successful approval creates an `assignment_pending` grant before calling Discord, making interrupted assignment recoverable. Grants transition through `awaiting_initial_join`, `active`, and `grace_period`, then to `expired` or `revoked`; failed cleanup stays retryable in `cleanup_pending`. Ambiguous role ownership is retained in `ownership_uncertain` for administrator review.
 
-SQLite stores guild timer/approval settings, configured role-to-voice-channel mappings, approver roles, request and message IDs, decisions, role ownership observations, grant states, and deadline timestamps. The DB is created at `DATABASE_PATH`; SQLite WAL mode and foreign keys are enabled. Schema upgrades use `PRAGMA user_version`.
+SQLite stores guild timer/approval settings, configured role-to-voice-channel mappings, request and message IDs, decisions, role ownership observations, grant states, and deadline timestamps. The DB is created at `DATABASE_PATH`; SQLite WAL mode and foreign keys are enabled. Schema upgrades use `PRAGMA user_version`.
 
 ## Requirements and setup
 
@@ -44,7 +44,7 @@ Invite the application with the `bot` and `applications.commands` OAuth scopes a
 - Read Message History
 - Manage Roles
 
-The bot's highest role must be above every requestable access role. Do not grant Administrator. The approval channel must permit the bot to view, send, embed, and read message history. Enable the Server Members privileged intent in the Developer Portal before running the bot.
+The bot's highest role must be above every requestable access role. Do not grant Administrator. The channel where a request is started (the command channel or the panel channel) must permit the bot to view, send, embed, and read message history. Enable the Server Members privileged intent in the Developer Portal before running the bot.
 
 ## Environment variables
 
@@ -64,21 +64,19 @@ Per-server timer values are persisted and changed with `/access-config timers`; 
 ## Commands
 
 - `/request-access role:<autocomplete> [channel:<voice channel>]` submits a request. The optional channel is required when the selected role has multiple configured target channels.
-- `/access-config role-channel role:<role> channel:<voice channel>` registers a requestable role/channel mapping. Repeat for additional channels.
+- `/access-config role-channel role:<role> channel:<voice channel>` registers a requestable role/channel mapping. Repeat for additional channels; each voice channel can be assigned to only one access role.
 - `/access-config remove-mapping role:<role> channel:<voice channel>` removes one mapping; the role stops being requestable when its final mapping is removed.
-- `/access-config approver-role role:<role>` and `/access-config remove-approver-role role:<role>` configure eligible approver roles.
-- `/access-config approval-channel channel:<text channel>` selects where approval messages are posted.
-- `/access-config request-panel channel:<text channel>` posts a persistent **Request access** button. Members choose a configured role and then one of its target voice channels using ephemeral select menus; the normal request checks and approval workflow are used.
+- `/access-config request-panel channel:<text channel>` posts a persistent **Request access** button. Members click it and choose a voice channel from an ephemeral menu; its uniquely mapped role is requested automatically, using the normal validation and approval workflow.
 - `/access-config timers initial-join-seconds:<n> departure-grace-seconds:<n> request-expiration-seconds:<n>` changes per-server timers.
 - `/access-config view` displays configured settings.
 - `/access-status` displays pending requests, live grants, deadlines, and cleanup problems.
 - `/access-cancel id:<request-or-grant-id>` cancels a pending request or revokes a temporary grant.
 
-All `/access-config`, `/access-status`, and `/access-cancel` operations require the Discord Administrator permission. Configuration also validates channel types, managed/privileged roles, and bot role hierarchy. A member can approve or deny only while holding one of the configured approver roles and currently occupying the exact requested target channel. This is rechecked at button-click time.
+All `/access-config`, `/access-status`, and `/access-cancel` operations require the Discord Administrator permission. Configuration also validates channel types, managed/privileged roles, and bot role hierarchy. An approval message pings only the requested role. Members can approve or deny only while holding that exact requested role and currently occupying the request's target voice channel. Both conditions are rechecked when they click.
 
 Repeated requests for the same role are rate-limited for 30 seconds, including after a prior request has been decided.
 
-The request panel is a regular bot message and its button remains usable across bot restarts. Run `/access-config request-panel` again to post another copy in a different channel. Discord select menus support at most 25 options, so each menu displays up to 25 configured roles or voice channels.
+Approval requests are posted in the channel where `/request-access` is invoked, or in the channel containing the request panel when a member uses its button. `/access-config view` reports this routing behavior; there is no separate approval-channel setting. The panel is a regular bot message and its button remains usable across bot restarts. Run `/access-config request-panel` again to post another copy in a different channel. Discord select menus support at most 25 options, so the panel displays up to 25 configured voice channels.
 
 Discord only permits autocomplete for string, integer, and number slash-command options—not role-typed options. Therefore the request role is selected from Discord's dynamic string autocomplete, populated exclusively from the configured roles, and the selected role ID is revalidated on command execution. This is not treated as authorization.
 
@@ -97,9 +95,9 @@ Keep the `data` directory on persistent storage and run only one bot process aga
 Common issues:
 
 - **Commands do not appear:** verify `DISCORD_APPLICATION_ID`, bot invitation scope `applications.commands`, and (for guild registration) `DISCORD_DEFAULT_GUILD_ID`.
-- **Requests cannot be posted:** configure an approval channel and grant the bot View Channel, Send Messages, Embed Links, and Read Message History there.
+- **Requests cannot be posted:** grant the bot View Channel, Send Messages, Embed Links, and Read Message History in the channel where the request command or panel is used.
 - **Roles cannot be granted or removed:** grant Manage Roles and move the bot's highest role above every managed role.
-- **No one can decide a request:** configure at least one approver role and ensure eligible approvers join the exact target voice channel.
+- **No one can decide a request:** ensure a member has the requested access role and is currently in the exact target voice channel.
 - **Member state is unavailable:** enable the Server Members privileged intent in the Developer Portal and retain the configured gateway intents.
 - **A role remains after timeout:** inspect the grant state. `ownership_uncertain` is deliberate safe retention; `cleanup_pending` means Discord rejected or could not complete cleanup and will be retried.
 

@@ -60,43 +60,6 @@ export const accessConfigCommand = new SlashCommandBuilder()
   )
   .addSubcommand((subcommand) =>
     subcommand
-      .setName("approver-role")
-      .setDescription("Add an approver role")
-      .addRoleOption((option) =>
-        option
-          .setName("role")
-          .setDescription("Role eligible to approve")
-          .setRequired(true),
-      ),
-  )
-  .addSubcommand((subcommand) =>
-    subcommand
-      .setName("remove-approver-role")
-      .setDescription("Remove an approver role")
-      .addRoleOption((option) =>
-        option
-          .setName("role")
-          .setDescription("Approver role")
-          .setRequired(true),
-      ),
-  )
-  .addSubcommand((subcommand) =>
-    subcommand
-      .setName("approval-channel")
-      .setDescription("Set the channel where requests are posted")
-      .addChannelOption((option) =>
-        option
-          .setName("channel")
-          .setDescription("Text channel for approval messages")
-          .setRequired(true)
-          .addChannelTypes(
-            ChannelType.GuildText,
-            ChannelType.GuildAnnouncement,
-          ),
-      ),
-  )
-  .addSubcommand((subcommand) =>
-    subcommand
       .setName("request-panel")
       .setDescription("Post a persistent temporary access request button")
       .addChannelOption((option) =>

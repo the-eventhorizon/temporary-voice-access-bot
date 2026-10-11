@@ -148,8 +148,18 @@ process.once("SIGINT", () => void shutdown("SIGINT"));
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
 client.login(config.DISCORD_TOKEN).catch((error: unknown) => {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const isDisallowedIntent = errorMessage
+    .toLocaleLowerCase()
+    .includes("disallowed intents");
   log("error", "Discord login failed", {
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage,
+    ...(isDisallowedIntent
+      ? {
+          action:
+            "Enable Server Members Intent in Discord Developer Portal → Application → Bot → Privileged Gateway Intents, then restart the bot.",
+        }
+      : {}),
   });
   database.close();
   process.exitCode = 1;

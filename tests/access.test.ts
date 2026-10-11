@@ -9,6 +9,7 @@ import type {
   Client,
   Guild,
   GuildMember,
+  GuildTextBasedChannel,
   Role,
   StringSelectMenuInteraction,
   VoiceState,
@@ -97,6 +98,19 @@ test("requests are unique per member and role while pending", (context) => {
   const now = Date.now();
   database.createRequest(makeRequest("request-1", now));
   assert.throws(() => database.createRequest(makeRequest("request-2", now)));
+});
+
+test("a voice channel can be assigned to only one request role", (context) => {
+  const { database, cleanup } = makeDatabase();
+  context.after(cleanup);
+  database.addRoleChannel("guild-1", "role-1", "voice-1");
+  assert.throws(
+    () => database.addRoleChannel("guild-1", "role-2", "voice-1"),
+    /already assigned to role role-1/,
+  );
+  assert.equal(database.getRoleForChannel("guild-1", "voice-1"), "role-1");
+  database.addRoleChannel("guild-1", "role-1", "voice-2");
+  assert.equal(database.getRoleForChannel("guild-1", "voice-2"), "role-1");
 });
 
 test("concurrent approval claims have exactly one winner", (context) => {
@@ -254,7 +268,6 @@ test("configured timer environment defaults seed newly added guilds", (context) 
   });
   assert.deepEqual(database.getGuildConfig("guild-1"), {
     guildId: "guild-1",
-    approvalChannelId: null,
     initialJoinTimeoutSeconds: 45,
     departureGracePeriodSeconds: 75,
     requestExpirationSeconds: 240,
@@ -409,7 +422,6 @@ function makeApprovalHarness(approverVoiceChannel = "voice-1") {
   const now = Date.now();
   database.addRoleChannel("guild-1", "role-1", "voice-1");
   database.addRoleChannel("guild-1", "role-1", "voice-2");
-  database.addApproverRole("guild-1", "approver-role");
   database.createRequest(makeRequest("request-approval", now));
   const role = {
     id: "role-1",
@@ -417,10 +429,10 @@ function makeApprovalHarness(approverVoiceChannel = "voice-1") {
     position: 1,
     permissions: { any: () => false },
   } as unknown as Role;
-  const approverRole = { id: "approver-role" } as Role;
+  const approverRole = { id: "role-1" } as Role;
   const approver = {
     id: "approver-1",
-    roles: { cache: new Collection([["approver-role", approverRole]]) },
+    roles: { cache: new Collection([["role-1", approverRole]]) },
     voice: { channelId: approverVoiceChannel },
   };
   const requesterRoles = new Collection<string, Role>();
@@ -511,6 +523,31 @@ test("simultaneous eligible decisions produce one winning decision", async (cont
   );
 });
 
+test("approval message pings only the requested access role", async (context) => {
+  const harness = makeApprovalHarness();
+  context.after(harness.cleanup);
+  let payload:
+    | {
+        content?: string;
+        allowedMentions?: { roles?: string[]; users?: string[] };
+      }
+    | undefined;
+  await harness.workflow.postRequest(
+    harness.database.getRequest("request-approval")!,
+    {
+      id: "approval-channel",
+      send: async (message: typeof payload) => {
+        payload = message;
+        return { id: "posted-message" };
+      },
+    } as unknown as GuildTextBasedChannel,
+    "Scrim Access",
+  );
+  assert.equal(payload?.content, "<@&role-1>\nNew temporary access request");
+  assert.deepEqual(payload?.allowedMentions?.roles, ["role-1"]);
+  assert.deepEqual(payload?.allowedMentions?.users, ["user-1"]);
+});
+
 test("eligible approval grants the role and persists the initial-join deadline", async (context) => {
   const harness = makeApprovalHarness();
   context.after(harness.cleanup);
@@ -525,15 +562,11 @@ test("eligible approval grants the role and persists the initial-join deadline",
   assert.ok(grant?.deadlineAt && grant.deadlineAt > Date.now());
 });
 
-test("request panel selects a mapped voice channel and submits through normal approval flow", async (context) => {
+test("request panel selects a voice channel and derives its unique role", async (context) => {
   const { database, cleanup } = makeDatabase();
   context.after(cleanup);
   database.addRoleChannel("guild-1", "role-1", "voice-1");
   database.addRoleChannel("guild-1", "role-1", "voice-2");
-  database.addApproverRole("guild-1", "approver-role");
-  database.updateGuildConfig("guild-1", {
-    approvalChannelId: "approval-channel",
-  });
 
   const role = {
     id: "role-1",
@@ -547,10 +580,11 @@ test("request panel selects a mapped voice channel and submits through normal ap
     { id: "voice-2", name: "Scrim Two", type: ChannelType.GuildStageVoice },
   ];
   let postedApproval = false;
-  const approvalChannel = {
-    id: "approval-channel",
+  const panelChannel = {
+    id: "panel-channel",
     guildId: "guild-1",
     isTextBased: () => true,
+    permissionsFor: () => ({ has: () => true }),
     send: async () => {
       postedApproval = true;
       return { id: "approval-message" };
@@ -578,11 +612,11 @@ test("request panel selects a mapped voice channel and submits through normal ap
     channels: {
       cache: new Collection([
         ...voiceChannels.map((channel) => [channel.id, channel] as const),
-        ["approval-channel", approvalChannel] as const,
+        ["panel-channel", panelChannel] as const,
       ]),
       fetch: async (id: string) =>
-        id === "approval-channel"
-          ? approvalChannel
+        id === "panel-channel"
+          ? panelChannel
           : (voiceChannels.find((channel) => channel.id === id) ?? null),
     },
   } as unknown as Guild;
@@ -596,22 +630,9 @@ test("request panel selects a mapped voice channel and submits through normal ap
     lifecycle,
   );
 
-  let roleStep: { content?: string; components?: unknown[] } = {};
-  await handler.handlePanelSelection({
-    customId: "access-panel:role",
-    values: ["role-1"],
-    guild,
-    user: { id: "user-1" },
-    update: async (response: typeof roleStep) => {
-      roleStep = response;
-    },
-  } as unknown as StringSelectMenuInteraction);
-  assert.match(roleStep.content ?? "", /Scrim Spectator/);
-  assert.ok(roleStep.components?.length);
-
   let completion = "";
   await handler.handlePanelSelection({
-    customId: "access-panel:channel:role-1:user-1",
+    customId: "access-panel:channel:user-1:panel-channel",
     values: ["voice-2"],
     guild,
     user: { id: "user-1" },
