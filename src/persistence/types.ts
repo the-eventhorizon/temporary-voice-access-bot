@@ -12,6 +12,7 @@ export type GrantState =
 
 export interface GuildConfig {
   guildId: string;
+  language: "en" | "de";
   initialJoinTimeoutSeconds: number;
   departureGracePeriodSeconds: number;
   requestExpirationSeconds: number;

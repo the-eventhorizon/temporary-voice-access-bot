@@ -6,6 +6,7 @@ import { ApprovalWorkflow } from "./interactions/approval.js";
 import { InteractionHandler } from "./interactions/handler.js";
 import { GrantLifecycle } from "./services/grant-lifecycle.js";
 import { log } from "./logger.js";
+import { translate } from "./localization.js";
 
 const client = new Client({
   intents: [
@@ -18,6 +19,7 @@ const database = new AccessDatabase(config.DATABASE_PATH, {
   initialJoinTimeoutSeconds: config.INITIAL_JOIN_TIMEOUT_SECONDS,
   departureGracePeriodSeconds: config.DEPARTURE_GRACE_PERIOD_SECONDS,
   requestExpirationSeconds: config.REQUEST_EXPIRATION_SECONDS,
+  language: "en",
 });
 const lifecycle = new GrantLifecycle(client, database);
 const approvals = new ApprovalWorkflow(client, database, lifecycle);
@@ -90,8 +92,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
       error: error instanceof Error ? error.message : String(error),
     });
     if (interaction.isRepliable()) {
-      const message =
-        "An unexpected error occurred. Please try again or contact an administrator.";
+      const message = interaction.guildId
+        ? translate(
+            database.getGuildConfig(interaction.guildId).language,
+            "unexpected",
+          )
+        : "An unexpected error occurred. Please try again or contact an administrator.";
       if (interaction.deferred || interaction.replied) {
         await interaction
           .followUp({ content: message, ephemeral: true })

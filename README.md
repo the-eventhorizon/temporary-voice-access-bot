@@ -61,6 +61,8 @@ The bot's highest role must be above every requestable access role. Do not grant
 
 Per-server timer values are persisted and changed with `/access-config timers`; changing environment defaults does not overwrite existing guild configuration.
 
+The bot's user-facing language is configured separately for each server. New server configurations default to English; use `/access-config language language:Deutsch` or choose **English** to switch it. The setting is stored in SQLite and applies to generated command responses, approval messages, and lifecycle notifications. Existing request-panel messages are not edited when the language changes, but new interactions use the current setting.
+
 ## Commands
 
 - `/request-access role:<autocomplete> [channel:<voice channel>]` submits a request. The optional channel is required when the selected role has multiple configured target channels.
@@ -68,6 +70,7 @@ Per-server timer values are persisted and changed with `/access-config timers`; 
 - `/access-config remove-mapping role:<role> channel:<voice channel>` removes one mapping; the role stops being requestable when its final mapping is removed.
 - `/access-config request-panel channel:<text channel>` posts a persistent **Request access** button. Members click it and choose a voice channel from an ephemeral menu; its uniquely mapped role is requested automatically, using the normal validation and approval workflow.
 - `/access-config timers initial-join-seconds:<n> departure-grace-seconds:<n> request-expiration-seconds:<n>` changes per-server timers.
+- `/access-config language language:<English|Deutsch>` sets the per-server language used for bot messages. English is the default for new server configurations.
 - `/access-config view` displays configured settings.
 - `/access-status` displays pending requests, live grants, deadlines, and cleanup problems.
 - `/access-cancel id:<request-or-grant-id>` cancels a pending request or revokes a temporary grant.
@@ -76,7 +79,7 @@ All `/access-config`, `/access-status`, and `/access-cancel` operations require 
 
 Repeated requests for the same role are rate-limited for 30 seconds, including after a prior request has been decided.
 
-Approval requests are posted in the channel where `/request-access` is invoked, or in the channel containing the request panel when a member uses its button. `/access-config view` reports this routing behavior; there is no separate approval-channel setting. The panel is a regular bot message and its button remains usable across bot restarts. Run `/access-config request-panel` again to post another copy in a different channel. Discord select menus support at most 25 options, so the panel displays up to 25 configured voice channels.
+Approval requests are posted in the channel where `/request-access` is invoked, or in the channel containing the request panel when a member uses its button. After an approval or denial, the message displays the decision for 30 seconds and is then deleted to reduce channel clutter. This cleanup resumes after a restart; if Discord temporarily rejects deletion, the bot retries. Expired and administrator-cancelled requests remain in the channel. `/access-config view` reports the routing behavior; there is no separate approval-channel setting. The panel is a regular bot message and its button remains usable across bot restarts. Run `/access-config request-panel` again to post another copy in a different channel. Discord select menus support at most 25 options, so the panel displays up to 25 configured voice channels.
 
 Discord only permits autocomplete for string, integer, and number slash-command options—not role-typed options. Therefore the request role is selected from Discord's dynamic string autocomplete, populated exclusively from the configured roles, and the selected role ID is revalidated on command execution. This is not treated as authorization.
 

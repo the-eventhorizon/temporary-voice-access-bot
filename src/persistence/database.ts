@@ -69,6 +69,7 @@ const migrations = [
   `,
   "DROP TABLE IF EXISTS approver_roles;",
   "ALTER TABLE guild_config DROP COLUMN approval_channel_id;",
+  "ALTER TABLE guild_config ADD COLUMN language TEXT NOT NULL DEFAULT 'en' CHECK (language IN ('en', 'de'));",
 ];
 
 function parseRequest(row: Record<string, unknown>): AccessRequest {
@@ -120,6 +121,7 @@ export class AccessDatabase {
       initialJoinTimeoutSeconds: 90,
       departureGracePeriodSeconds: 90,
       requestExpirationSeconds: 300,
+      language: "en",
     },
   ) {
     const absolutePath = resolve(path);
@@ -162,6 +164,7 @@ export class AccessDatabase {
       .get(guildId) as Record<string, unknown>;
     return {
       guildId,
+      language: row.language === "de" ? "de" : "en",
       initialJoinTimeoutSeconds: Number(row.initial_join_timeout_seconds),
       departureGracePeriodSeconds: Number(row.departure_grace_period_seconds),
       requestExpirationSeconds: Number(row.request_expiration_seconds),
@@ -176,10 +179,11 @@ export class AccessDatabase {
     const next = { ...current, ...update };
     this.db
       .prepare(
-        `UPDATE guild_config SET initial_join_timeout_seconds = ?,
+        `UPDATE guild_config SET language = ?, initial_join_timeout_seconds = ?,
          departure_grace_period_seconds = ?, request_expiration_seconds = ? WHERE guild_id = ?`,
       )
       .run(
+        next.language,
         next.initialJoinTimeoutSeconds,
         next.departureGracePeriodSeconds,
         next.requestExpirationSeconds,
@@ -338,6 +342,27 @@ export class AccessDatabase {
         .prepare("SELECT * FROM access_requests WHERE status = 'pending'")
         .all() as Record<string, unknown>[]
     ).map(parseRequest);
+  }
+
+  listDecidedRequestsWithMessages(): AccessRequest[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM access_requests
+           WHERE status IN ('approved', 'denied')
+             AND message_channel_id IS NOT NULL
+             AND message_id IS NOT NULL`,
+        )
+        .all() as Record<string, unknown>[]
+    ).map(parseRequest);
+  }
+
+  clearRequestMessageId(id: string): void {
+    this.db
+      .prepare(
+        "UPDATE access_requests SET message_channel_id = NULL, message_id = NULL WHERE id = ?",
+      )
+      .run(id);
   }
 
   decideRequest(

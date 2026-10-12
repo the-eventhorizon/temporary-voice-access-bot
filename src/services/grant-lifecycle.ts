@@ -8,6 +8,7 @@ import type { AccessDatabase } from "../persistence/database.js";
 import type { TemporaryGrant } from "../persistence/types.js";
 import { log } from "../logger.js";
 import { canAssignRole } from "./role-policy.js";
+import { translate } from "../localization.js";
 
 const keyFor = (guildId: string, userId: string, roleId: string) =>
   `${guildId}:${userId}:${roleId}`;
@@ -475,7 +476,11 @@ export class GrantLifecycle {
     this.database.updateGrant(grant.id, terminalState, null, Date.now());
     try {
       await member.send(
-        `Your temporary access to <#${grant.authorizedChannelIds[0]}> has ended.`,
+        translate(
+          this.database.getGuildConfig(grant.guildId).language,
+          "grantExpiredMemberLeft",
+          { channel: grant.authorizedChannelIds[0] ?? grant.id },
+        ),
       );
     } catch {
       log("debug", "Could not notify member of access cleanup", {
@@ -502,12 +507,14 @@ export class GrantLifecycle {
     try {
       const channel = await this.client.channels.fetch(channelId);
       if (!channel?.isTextBased() || !("send" in channel)) return;
+      const language = this.database.getGuildConfig(grant.guildId).language;
       await channel.send({
-        content:
-          `Temporary access cleanup failed for grant \`${grant.id}\` (<@${grant.requesterId}>, <@&${grant.roleId}>). Cleanup will be retried; inspect with \`/access-status\`. Error: ${error instanceof Error ? error.message : String(error)}`.slice(
-            0,
-            1900,
-          ),
+        content: translate(language, "cleanupFailureNotice", {
+          grant: grant.id,
+          user: grant.requesterId,
+          role: grant.roleId,
+          error: error instanceof Error ? error.message : String(error),
+        }).slice(0, 1900),
         allowedMentions: { parse: [] },
       });
     } catch (notificationError) {

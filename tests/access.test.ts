@@ -23,6 +23,7 @@ import { GrantLifecycle } from "../src/services/grant-lifecycle.js";
 import { canAssignRole } from "../src/services/role-policy.js";
 import { ApprovalWorkflow } from "../src/interactions/approval.js";
 import { InteractionHandler } from "../src/interactions/handler.js";
+import { localizedGrantState, translate } from "../src/localization.js";
 
 const makeDatabase = () => {
   const directory = mkdtempSync(join(tmpdir(), "access-bot-test-"));
@@ -90,6 +91,27 @@ test("role autocomplete source contains only explicitly configured roles", (cont
     "voice-2",
   ]);
   assert.deepEqual(database.getRequestableRoles("other-guild"), []);
+});
+
+test("guild language defaults to English and persists changes", (context) => {
+  const { database, cleanup } = makeDatabase();
+  context.after(cleanup);
+  assert.equal(database.getGuildConfig("guild-1").language, "en");
+  assert.equal(
+    database.updateGuildConfig("guild-1", { language: "de" }).language,
+    "de",
+  );
+  assert.equal(database.getGuildConfig("guild-1").language, "de");
+  assert.equal(translate("en", "accept"), "Accept");
+  assert.equal(translate("de", "accept"), "Genehmigen");
+  assert.equal(
+    translate("de", "approvalRequester", { user: "123" }),
+    "Anfragende Person: <@123>",
+  );
+  assert.equal(
+    localizedGrantState("de", "awaiting_initial_join"),
+    "Wartet auf ersten Beitritt",
+  );
 });
 
 test("requests are unique per member and role while pending", (context) => {
@@ -261,6 +283,7 @@ test("configured timer environment defaults seed newly added guilds", (context) 
     initialJoinTimeoutSeconds: 45,
     departureGracePeriodSeconds: 75,
     requestExpirationSeconds: 240,
+    language: "en",
   });
   context.after(() => {
     database.close();
@@ -268,6 +291,7 @@ test("configured timer environment defaults seed newly added guilds", (context) 
   });
   assert.deepEqual(database.getGuildConfig("guild-1"), {
     guildId: "guild-1",
+    language: "en",
     initialJoinTimeoutSeconds: 45,
     departureGracePeriodSeconds: 75,
     requestExpirationSeconds: 240,
@@ -466,7 +490,22 @@ function makeApprovalHarness(approverVoiceChannel = "voice-1") {
   } as unknown as Guild;
   const client = {
     guilds: { fetch: async () => guild },
+    channels: {
+      fetch: async () => ({
+        isTextBased: () => true,
+        messages: {
+          fetch: async () => ({
+            embeds: [],
+            edit: async () => {},
+            delete: async () => {
+              deletedMessages += 1;
+            },
+          }),
+        },
+      }),
+    },
   } as unknown as Client;
+  let deletedMessages = 0;
   const lifecycle = new GrantLifecycle(client, database);
   const workflow = new ApprovalWorkflow(client, database, lifecycle);
   const replies: string[] = [];
@@ -491,6 +530,9 @@ function makeApprovalHarness(approverVoiceChannel = "voice-1") {
     },
     get addRoleCalls() {
       return addRoleCalls;
+    },
+    get deletedMessages() {
+      return deletedMessages;
     },
   };
 }
@@ -521,6 +563,33 @@ test("simultaneous eligible decisions produce one winning decision", async (cont
     harness.replies.filter((reply) => reply === "Request denied.").length,
     1,
   );
+});
+
+test("accepted and denied approval messages are deleted after 30 seconds", async (context) => {
+  context.mock.timers.enable({
+    apis: ["setTimeout", "Date"],
+    now: Date.now(),
+  });
+  for (const action of ["accept", "deny"] as const) {
+    const harness = makeApprovalHarness();
+    context.after(harness.cleanup);
+    harness.database.setRequestMessageId(
+      "request-approval",
+      "approval-channel",
+      `message-${action}`,
+    );
+    await harness.workflow.handleButton(harness.button(action));
+    assert.equal(harness.deletedMessages, 0);
+    context.mock.timers.tick(29_999);
+    assert.equal(harness.deletedMessages, 0);
+    context.mock.timers.tick(1);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(harness.deletedMessages, 1);
+    assert.equal(
+      harness.database.getRequest("request-approval")?.messageId,
+      null,
+    );
+  }
 });
 
 test("approval message pings only the requested access role", async (context) => {

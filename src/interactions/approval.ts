@@ -15,18 +15,23 @@ import type { AccessRequest, TemporaryGrant } from "../persistence/types.js";
 import type { GrantLifecycle } from "../services/grant-lifecycle.js";
 import { canAssignRole } from "../services/role-policy.js";
 import { log } from "../logger.js";
+import { translate } from "../localization.js";
 
-export function approvalComponents(requestId: string, disabled = false) {
+export function approvalComponents(
+  requestId: string,
+  disabled = false,
+  language: "en" | "de" = "en",
+) {
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId(`access:accept:${requestId}`)
-        .setLabel("Accept")
+        .setLabel(translate(language, "accept"))
         .setStyle(ButtonStyle.Success)
         .setDisabled(disabled),
       new ButtonBuilder()
         .setCustomId(`access:deny:${requestId}`)
-        .setLabel("Deny")
+        .setLabel(translate(language, "deny"))
         .setStyle(ButtonStyle.Danger)
         .setDisabled(disabled),
     ),
@@ -35,6 +40,8 @@ export function approvalComponents(requestId: string, disabled = false) {
 
 export class ApprovalWorkflow {
   private readonly timers = new Map<string, NodeJS.Timeout>();
+  private readonly deletionTimers = new Map<string, NodeJS.Timeout>();
+  private static readonly messageDeletionDelayMs = 30_000;
 
   constructor(
     private readonly client: Client,
@@ -47,18 +54,38 @@ export class ApprovalWorkflow {
     channel: GuildTextBasedChannel,
     roleName: string,
   ): Promise<string> {
+    const language = this.database.getGuildConfig(request.guildId).language;
     const approverRoleId = request.roleId;
     const message = await channel.send({
-      content: `<@&${approverRoleId}>\nNew temporary access request`,
+      content: `<@&${approverRoleId}>\n${translate(language, "approvalPingText")}`,
       embeds: [
         new EmbedBuilder()
-          .setTitle("Voice access request")
+          .setTitle(translate(language, "approvalTitle"))
           .setDescription(
-            `Requester: <@${request.requesterId}>\nRole: <@&${request.roleId}> (${roleName})\nTarget: <#${request.targetChannelId}>\nExpires: <t:${Math.floor(request.expiresAt / 1000)}:R>`,
+            [
+              translate(language, "approvalRequester", {
+                user: request.requesterId,
+              }),
+              translate(language, "approvalRole", {
+                role: request.roleId,
+                name: roleName,
+              }),
+              translate(language, "approvalTarget", {
+                channel: request.targetChannelId,
+              }),
+              translate(language, "approvalExpires", {
+                expires: Math.floor(request.expiresAt / 1000),
+              }),
+            ].join("\n"),
           )
-          .setFooter({ text: `Request ID: ${request.id} • Pending` }),
+          .setFooter({
+            text: translate(language, "requestFooter", {
+              id: request.id,
+              status: translate(language, "approvalPending"),
+            }),
+          }),
       ],
-      components: approvalComponents(request.id),
+      components: approvalComponents(request.id, false, language),
       allowedMentions: {
         users: [request.requesterId],
         roles: [approverRoleId],
@@ -77,7 +104,12 @@ export class ApprovalWorkflow {
       !interaction.guild
     ) {
       await interaction.reply({
-        content: "This approval control is invalid.",
+        content: translate(
+          interaction.guildId
+            ? this.database.getGuildConfig(interaction.guildId).language
+            : "en",
+          "approvalControlInvalid",
+        ),
         ephemeral: true,
       });
       return;
@@ -89,13 +121,23 @@ export class ApprovalWorkflow {
       request.guildId !== interaction.guild.id ||
       request.status !== "pending"
     ) {
-      await interaction.editReply("This request is no longer pending.");
+      await interaction.editReply(
+        translate(
+          this.database.getGuildConfig(interaction.guild.id).language,
+          "requestNoLongerPending",
+        ),
+      );
       return;
     }
     if (request.expiresAt <= Date.now()) {
       this.database.expireRequest(request.id, Date.now());
       await this.resolveMessage(request, "expired");
-      await interaction.editReply("This request has expired.");
+      await interaction.editReply(
+        translate(
+          this.database.getGuildConfig(request.guildId).language,
+          "requestExpired",
+        ),
+      );
       return;
     }
     const approver = await interaction.guild.members
@@ -107,7 +149,10 @@ export class ApprovalWorkflow {
       approver.voice.channelId !== request.targetChannelId
     ) {
       await interaction.editReply(
-        "You must have the requested access role and be in the target voice channel.",
+        translate(
+          this.database.getGuildConfig(request.guildId).language,
+          "approverRequired",
+        ),
       );
       return;
     }
@@ -121,13 +166,26 @@ export class ApprovalWorkflow {
       );
       if (!won) {
         await interaction.editReply(
-          "Another decision was already recorded, or this request expired.",
+          translate(
+            this.database.getGuildConfig(request.guildId).language,
+            "competingDecision",
+          ),
         );
         return;
       }
       this.clearTimer(request.id);
       await this.resolveMessage(request, "denied", approver.id);
-      await interaction.editReply("Request denied.");
+      this.scheduleMessageDeletion(
+        request,
+        (request.decisionAt ?? Date.now()) +
+          ApprovalWorkflow.messageDeletionDelayMs,
+      );
+      await interaction.editReply(
+        translate(
+          this.database.getGuildConfig(request.guildId).language,
+          "requestDenied",
+        ),
+      );
       return;
     }
 
@@ -160,7 +218,10 @@ export class ApprovalWorkflow {
       requester.roles.cache.has(request.roleId)
     ) {
       await interaction.editReply(
-        "The requester, role, or channel is no longer eligible. No role was assigned.",
+        translate(
+          this.database.getGuildConfig(request.guildId).language,
+          "requesterNoLongerEligible",
+        ),
       );
       return;
     }
@@ -189,19 +250,30 @@ export class ApprovalWorkflow {
     );
     if (!won) {
       await interaction.editReply(
-        "Another decision was already recorded, or this request expired.",
+        translate(
+          this.database.getGuildConfig(request.guildId).language,
+          "competingDecision",
+        ),
       );
       return;
     }
     this.clearTimer(request.id);
     await this.resolveMessage(request, "approved", approver.id);
+    this.scheduleMessageDeletion(
+      request,
+      (request.decisionAt ?? Date.now()) +
+        ApprovalWorkflow.messageDeletionDelayMs,
+    );
     try {
       await this.lifecycle.completeAssignment(
         grant.id,
         currentConfig.initialJoinTimeoutSeconds,
       );
       await interaction.editReply(
-        "Request approved and temporary access granted.",
+        translate(
+          this.database.getGuildConfig(request.guildId).language,
+          "requestApproved",
+        ),
       );
     } catch (error) {
       log(
@@ -214,7 +286,10 @@ export class ApprovalWorkflow {
         },
       );
       await interaction.editReply(
-        "The request was approved, but Discord could not assign the role yet. The bot will retry; contact an administrator if it remains unresolved.",
+        translate(
+          this.database.getGuildConfig(request.guildId).language,
+          "approvalAssignmentFailed",
+        ),
       );
     }
   }
@@ -227,6 +302,13 @@ export class ApprovalWorkflow {
       } else {
         this.schedule(request.id, request.expiresAt);
       }
+    }
+    for (const request of this.database.listDecidedRequestsWithMessages()) {
+      this.scheduleMessageDeletion(
+        request,
+        (request.decisionAt ?? Date.now()) +
+          ApprovalWorkflow.messageDeletionDelayMs,
+      );
     }
   }
 
@@ -269,6 +351,57 @@ export class ApprovalWorkflow {
       this.schedule(request.id, request.expiresAt);
   }
 
+  private scheduleMessageDeletion(
+    request: AccessRequest,
+    deleteAt: number,
+  ): void {
+    this.clearDeletionTimer(request.id);
+    const timer = setTimeout(
+      () => {
+        this.deletionTimers.delete(request.id);
+        void this.deleteResolvedMessage(request).catch((error: unknown) => {
+          log("warn", "Could not delete resolved approval message; retrying", {
+            requestId: request.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          this.scheduleMessageDeletion(
+            request,
+            Date.now() + ApprovalWorkflow.messageDeletionDelayMs,
+          );
+        });
+      },
+      Math.max(0, Math.min(deleteAt - Date.now(), 2_147_000_000)),
+    );
+    timer.unref();
+    this.deletionTimers.set(request.id, timer);
+  }
+
+  private async deleteResolvedMessage(request: AccessRequest): Promise<void> {
+    if (!request.messageId || !request.messageChannelId) return;
+    try {
+      const channel = await this.client.channels.fetch(
+        request.messageChannelId,
+      );
+      if (!channel?.isTextBased() || !("messages" in channel)) {
+        this.database.clearRequestMessageId(request.id);
+        return;
+      }
+      const message = await channel.messages.fetch(request.messageId);
+      await message.delete();
+      this.database.clearRequestMessageId(request.id);
+    } catch (error) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? error.code
+          : undefined;
+      if (code === 10003 || code === 10008) {
+        this.database.clearRequestMessageId(request.id);
+        return;
+      }
+      throw error;
+    }
+  }
+
   private async resolveMessage(
     request: AccessRequest,
     status: string,
@@ -281,17 +414,37 @@ export class ApprovalWorkflow {
         : null;
       if (!channel?.isTextBased() || !("messages" in channel)) return;
       const message = await channel.messages.fetch(request.messageId);
-      const footer = actorId ? `${status} by ${actorId}` : status;
+      const language = this.database.getGuildConfig(request.guildId).language;
+      const statusKey =
+        status === "approved"
+          ? "approvalApproved"
+          : status === "denied"
+            ? "approvalDenied"
+            : status === "expired"
+              ? "approvalExpired"
+              : status === "cancelled"
+                ? "approvalCancelled"
+                : "approvalPending";
+      const localizedStatus = translate(language, statusKey);
+      const footer = translate(language, "requestFooter", {
+        id: request.id,
+        status: actorId
+          ? translate(language, "decisionBy", {
+              status: localizedStatus,
+              user: actorId,
+            })
+          : localizedStatus,
+      });
       const embed = message.embeds[0];
       await message.edit({
         embeds: embed
           ? [
               EmbedBuilder.from(embed).setFooter({
-                text: `Request ID: ${request.id} • ${footer}`,
+                text: footer,
               }),
             ]
           : [],
-        components: approvalComponents(request.id, true),
+        components: approvalComponents(request.id, true, language),
         content: message.content,
         allowedMentions: { parse: [] },
       });
@@ -307,5 +460,11 @@ export class ApprovalWorkflow {
     const timer = this.timers.get(requestId);
     if (timer) clearTimeout(timer);
     this.timers.delete(requestId);
+  }
+
+  private clearDeletionTimer(requestId: string): void {
+    const timer = this.deletionTimers.get(requestId);
+    if (timer) clearTimeout(timer);
+    this.deletionTimers.delete(requestId);
   }
 }
