@@ -57,6 +57,8 @@ administrator-cancelled requests are not automatically deleted.
    initial-join deadline. The user is told only that assignment succeeded after
    the Discord API call succeeds. Failures leave the grant recoverable and are
    logged.
+8. After role assignment succeeds, send a localized notice in the target voice
+   channel's text chat, explicitly pinging only the requester.
 
 The button handler's initial check provides immediate feedback; acceptance
 re-fetches the approver and rechecks its role/voice conditions just before the

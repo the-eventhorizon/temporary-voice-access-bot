@@ -100,6 +100,8 @@ const english = {
   competingDecision:
     "Another decision was already recorded, or this request expired.",
   requestDenied: "Request denied.",
+  requesterApprovalNotice:
+    "<@{user}> your temporary voice access request was approved and your role has been assigned.",
   requesterNoLongerEligible:
     "The requester, role, or channel is no longer eligible. No role was assigned.",
   requestApproved: "Request approved and temporary access granted.",
@@ -223,6 +225,8 @@ const german: Record<TranslationKey, string> = {
   competingDecision:
     "Eine andere Entscheidung wurde bereits getroffen oder die Anfrage ist abgelaufen.",
   requestDenied: "Anfrage abgelehnt.",
+  requesterApprovalNotice:
+    "<@{user}> deine Anfrage für temporären Sprachzugang wurde genehmigt und deine Rolle wurde zugewiesen.",
   requesterNoLongerEligible:
     "Anfragende Person, Rolle oder Kanal ist nicht mehr berechtigt. Es wurde keine Rolle vergeben.",
   requestApproved: "Anfrage genehmigt und temporärer Zugang erteilt.",

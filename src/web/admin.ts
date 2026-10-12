@@ -32,6 +32,90 @@ export interface AdminConfig {
   authSecret: string;
 }
 
+function parseIpv4(address: string): number[] | null {
+  const parts = address.split(".");
+  if (parts.length !== 4) return null;
+  const octets = parts.map((part) =>
+    /^\d{1,3}$/.test(part) ? Number(part) : Number.NaN,
+  );
+  return octets.every((octet) => octet >= 0 && octet <= 255) ? octets : null;
+}
+
+function parseIpv6(address: string): number[] | null {
+  const normalized = address.toLowerCase().replace(/%[^%]+$/, "");
+  const dottedTail = normalized.match(/(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+  let value = normalized;
+  if (dottedTail) {
+    const octets = parseIpv4(dottedTail);
+    if (!octets) return null;
+    const high = ((octets[0]! << 8) | octets[1]!).toString(16);
+    const low = ((octets[2]! << 8) | octets[3]!).toString(16);
+    value = value.replace(dottedTail, `${high}:${low}`);
+  }
+
+  const halves = value.split("::");
+  if (halves.length > 2) return null;
+  const parseHalf = (half: string) =>
+    half
+      ? half
+          .split(":")
+          .map((group) =>
+            /^[\da-f]{1,4}$/.test(group)
+              ? Number.parseInt(group, 16)
+              : Number.NaN,
+          )
+      : [];
+  const left = parseHalf(halves[0] ?? "");
+  const right = parseHalf(halves[1] ?? "");
+  if (
+    [...left, ...right].some((group) => !Number.isInteger(group)) ||
+    (halves.length === 1 && left.length !== 8) ||
+    (halves.length === 2 && left.length + right.length >= 8)
+  ) {
+    return null;
+  }
+  return halves.length === 1
+    ? left
+    : [
+        ...left,
+        ...Array<number>(8 - left.length - right.length).fill(0),
+        ...right,
+      ];
+}
+
+function isLoopbackAddress(address: string | undefined): boolean {
+  if (!address) return false;
+  const unwrapped = address.replace(/^\[|\]$/g, "");
+  const ipv4 = parseIpv4(unwrapped);
+  if (ipv4) return ipv4[0] === 127;
+  const ipv6 = parseIpv6(unwrapped);
+  if (!ipv6) return false;
+  const isIpv6Loopback =
+    ipv6.slice(0, 7).every((group) => group === 0) && ipv6[7] === 1;
+  const isIpv4MappedLoopback =
+    ipv6.slice(0, 5).every((group) => group === 0) &&
+    ipv6[5] === 0xffff &&
+    ipv6[6]! >> 8 === 127;
+  return isIpv6Loopback || isIpv4MappedLoopback;
+}
+
+export function isLoopbackHost(host: string): boolean {
+  return host.toLowerCase() === "localhost" || isLoopbackAddress(host);
+}
+
+function isLocalAdminRequest(
+  request: IncomingMessage,
+  server: Server,
+): boolean {
+  const address = server.address();
+  return (
+    address !== null &&
+    typeof address !== "string" &&
+    isLoopbackAddress(address.address) &&
+    isLoopbackAddress(request.socket.remoteAddress)
+  );
+}
+
 const page = `<!doctype html>
 <html lang="en">
 <head>
@@ -44,7 +128,7 @@ const page = `<!doctype html>
     body{max-width:920px;margin:2rem auto;padding:0 1rem}
     h1,h2{color:#fff}section{background:#1f2937;border:1px solid #374151;border-radius:10px;padding:1rem 1.25rem;margin:1rem 0}
     label{display:block;margin:.8rem 0 .25rem}input,select,button{font:inherit;padding:.55rem;border-radius:6px;border:1px solid #4b5563;background:#111827;color:inherit}
-    input,select{max-width:100%;width:30rem}button{background:#2563eb;border:0;cursor:pointer;margin:.6rem .4rem .2rem 0}
+    input,select{max-width:85%;width:30rem}button{background:#2563eb;border:0;cursor:pointer;margin:.6rem .4rem .2rem 0}
     button.danger{background:#991b1b}.row{display:flex;gap:.75rem;flex-wrap:wrap}.row>div{flex:1;min-width:180px}
     .muted{color:#9ca3af}.mapping{display:flex;justify-content:space-between;gap:1rem;border-top:1px solid #374151;padding:.6rem 0}
     #status{position:sticky;top:0;background:#111827;padding:.5rem;color:#93c5fd}small{display:block;color:#9ca3af}
@@ -210,10 +294,15 @@ export function createAdminServer(options: {
         ? (suppliedHeader[0] ?? "")
         : (suppliedHeader ?? ""),
     );
-    if (
-      suppliedAuth.length !== expectedAuth.length ||
-      !timingSafeEqual(suppliedAuth, expectedAuth)
-    ) {
+    const validAuth =
+      expectedAuth.length > 0 &&
+      suppliedAuth.length === expectedAuth.length &&
+      timingSafeEqual(suppliedAuth, expectedAuth);
+    const unauthenticatedLocalAccess =
+      expectedAuth.length === 0 &&
+      isLoopbackHost(config.host) &&
+      isLocalAdminRequest(request, server);
+    if (!validAuth && !unauthenticatedLocalAccess) {
       send(response, 401, { error: "Unauthorized" });
       return;
     }

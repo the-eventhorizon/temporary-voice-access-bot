@@ -306,6 +306,7 @@ export class ApprovalWorkflow {
         grant.id,
         currentConfig.initialJoinTimeoutSeconds,
       );
+      await this.notifyRequesterOfApproval(request);
       await interaction.editReply(
         translate(
           this.database.getGuildConfig(request.guildId).language,
@@ -488,6 +489,42 @@ export class ApprovalWorkflow {
     } catch (error) {
       log("warn", "Could not update resolved approval message", {
         requestId: request.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async notifyRequesterOfApproval(
+    request: AccessRequest,
+  ): Promise<void> {
+    if (!request.messageChannelId) return;
+    try {
+      const channel = await this.client.channels.fetch(
+        request.messageChannelId,
+      );
+      if (
+        !channel?.isTextBased() ||
+        !("send" in channel) ||
+        typeof channel.send !== "function"
+      ) {
+        log("warn", "Could not notify requester of approval", {
+          requestId: request.id,
+          channelId: request.messageChannelId,
+          reason: "Approval channel is unavailable for messages",
+        });
+        return;
+      }
+      const language = this.database.getGuildConfig(request.guildId).language;
+      await channel.send({
+        content: translate(language, "requesterApprovalNotice", {
+          user: request.requesterId,
+        }),
+        allowedMentions: { users: [request.requesterId] },
+      });
+    } catch (error) {
+      log("warn", "Could not notify requester of approval", {
+        requestId: request.id,
+        channelId: request.messageChannelId,
         error: error instanceof Error ? error.message : String(error),
       });
     }

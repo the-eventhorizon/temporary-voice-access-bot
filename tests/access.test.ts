@@ -24,7 +24,11 @@ import { canAssignRole } from "../src/services/role-policy.js";
 import { ApprovalWorkflow } from "../src/interactions/approval.js";
 import { InteractionHandler } from "../src/interactions/handler.js";
 import { localizedGrantState, translate } from "../src/localization.js";
-import { createAdminServer, type AdminConfig } from "../src/web/admin.js";
+import {
+  createAdminServer,
+  isLoopbackHost,
+  type AdminConfig,
+} from "../src/web/admin.js";
 
 const makeDatabase = () => {
   const directory = mkdtempSync(join(tmpdir(), "access-bot-test-"));
@@ -166,6 +170,43 @@ test("web admin requires trusted proxy auth and exposes no credential management
       headers: { "X-Website-Admin": authSecret },
     });
     assert.equal(noCredentialEndpoint.status, 404);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    cleanup();
+  }
+});
+
+test("web admin permits unauthenticated access over loopback when no secret is configured", async () => {
+  const { database, cleanup } = makeDatabase();
+  const server = createAdminServer({
+    config: {
+      host: "127.0.0.1",
+      port: 0,
+      authHeader: "X-Website-Admin",
+      authSecret: "",
+    },
+    database,
+    client: { guilds: { cache: new Collection() } } as unknown as Client,
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    const page = await fetch(`${baseUrl}/`);
+    assert.equal(page.status, 200);
+
+    const bootstrap = await fetch(`${baseUrl}/api/bootstrap`);
+    assert.equal(bootstrap.status, 200);
+    assert.deepEqual(await bootstrap.json(), { guilds: [] });
+
+    assert.equal(isLoopbackHost("localhost"), true);
+    assert.equal(isLoopbackHost("127.0.0.2"), true);
+    assert.equal(isLoopbackHost("::1"), true);
+    assert.equal(isLoopbackHost("0.0.0.0"), false);
+    assert.equal(isLoopbackHost("192.168.1.10"), false);
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
@@ -575,6 +616,13 @@ function makeApprovalHarness(approverVoiceChannel = "voice-1") {
     channels: {
       fetch: async () => ({
         isTextBased: () => true,
+        send: async (payload: {
+          content?: string;
+          allowedMentions?: { users?: string[] };
+        }) => {
+          approvalNotices.push(payload);
+          return { id: "requester-notice" };
+        },
         messages: {
           fetch: async () => ({
             embeds: [],
@@ -588,6 +636,10 @@ function makeApprovalHarness(approverVoiceChannel = "voice-1") {
     },
   } as unknown as Client;
   let deletedMessages = 0;
+  const approvalNotices: {
+    content?: string;
+    allowedMentions?: { users?: string[] };
+  }[] = [];
   const lifecycle = new GrantLifecycle(client, database);
   const workflow = new ApprovalWorkflow(client, database, lifecycle);
   const replies: string[] = [];
@@ -607,6 +659,7 @@ function makeApprovalHarness(approverVoiceChannel = "voice-1") {
     workflow,
     button,
     replies,
+    approvalNotices,
     moveApproverTo(channelId: string) {
       approver.voice.channelId = channelId;
     },
@@ -739,6 +792,11 @@ test("approval message pings only role holders currently in the target voice cha
 test("eligible approval grants the role and persists the initial-join deadline", async (context) => {
   const harness = makeApprovalHarness();
   context.after(harness.cleanup);
+  harness.database.setRequestMessageId(
+    "request-approval",
+    "approval-channel",
+    "approval-message",
+  );
   await harness.workflow.handleButton(harness.button("accept"));
   const grant = harness.database.getGrantByRequest("request-approval");
   assert.equal(
@@ -746,6 +804,13 @@ test("eligible approval grants the role and persists the initial-join deadline",
     "approved",
   );
   assert.equal(harness.addRoleCalls, 1);
+  assert.deepEqual(harness.approvalNotices, [
+    {
+      content:
+        "<@user-1> your temporary voice access request was approved and your role has been assigned.",
+      allowedMentions: { users: ["user-1"] },
+    },
+  ]);
   assert.equal(grant?.state, "awaiting_initial_join");
   assert.ok(grant?.deadlineAt && grant.deadlineAt > Date.now());
 });

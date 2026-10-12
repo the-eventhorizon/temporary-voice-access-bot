@@ -48,20 +48,20 @@ The bot's highest role must be above every requestable access role. Do not grant
 
 ## Environment variables
 
-| Variable                         | Required | Default                    | Description                                                                            |
-| -------------------------------- | -------- | -------------------------- | -------------------------------------------------------------------------------------- |
-| `DISCORD_TOKEN`                  | Yes      | —                          | Bot token; keep it private and out of source control.                                  |
-| `DISCORD_APPLICATION_ID`         | Yes      | —                          | Discord application/client ID.                                                         |
-| `DISCORD_DEFAULT_GUILD_ID`       | No       | Global commands            | Optional guild for rapid command registration.                                         |
-| `DATABASE_PATH`                  | No       | `./data/access-bot.sqlite` | Persistent SQLite database file.                                                       |
-| `INITIAL_JOIN_TIMEOUT_SECONDS`   | No       | `90`                       | Default initial-join timeout for newly configured guilds.                              |
-| `DEPARTURE_GRACE_PERIOD_SECONDS` | No       | `90`                       | Default grace period for newly configured guilds.                                      |
-| `REQUEST_EXPIRATION_SECONDS`     | No       | `300`                      | Default approval-request expiration for newly configured guilds.                       |
-| `LOG_LEVEL`                      | No       | `info`                     | `debug`, `info`, `warn`, or `error`.                                                   |
-| `WEB_ADMIN_HOST`                 | No       | `127.0.0.1`                | Address for the optional web admin service. Use `0.0.0.0` only behind a trusted proxy. |
-| `WEB_ADMIN_PORT`                 | No       | `8787`                     | Port for the optional web admin service.                                               |
-| `WEB_ADMIN_AUTH_HEADER`          | No       | `X-Website-Admin`          | Header the reverse proxy injects for authenticated requests.                           |
-| `WEB_ADMIN_AUTH_SECRET`          | No       | Disabled                   | At least 32-character shared value checked on every web request.                       |
+| Variable                         | Required | Default                    | Description                                                                             |
+| -------------------------------- | -------- | -------------------------- | --------------------------------------------------------------------------------------- |
+| `DISCORD_TOKEN`                  | Yes      | —                          | Bot token; keep it private and out of source control.                                   |
+| `DISCORD_APPLICATION_ID`         | Yes      | —                          | Discord application/client ID.                                                          |
+| `DISCORD_DEFAULT_GUILD_ID`       | No       | Global commands            | Optional guild for rapid command registration.                                          |
+| `DATABASE_PATH`                  | No       | `./data/access-bot.sqlite` | Persistent SQLite database file.                                                        |
+| `INITIAL_JOIN_TIMEOUT_SECONDS`   | No       | `90`                       | Default initial-join timeout for newly configured guilds.                               |
+| `DEPARTURE_GRACE_PERIOD_SECONDS` | No       | `90`                       | Default grace period for newly configured guilds.                                       |
+| `REQUEST_EXPIRATION_SECONDS`     | No       | `300`                      | Default approval-request expiration for newly configured guilds.                        |
+| `LOG_LEVEL`                      | No       | `info`                     | `debug`, `info`, `warn`, or `error`.                                                    |
+| `WEB_ADMIN_HOST`                 | No       | `127.0.0.1`                | Address for the optional web admin service. Use `0.0.0.0` only behind a trusted proxy.  |
+| `WEB_ADMIN_PORT`                 | No       | `8787`                     | Port for the optional web admin service.                                                |
+| `WEB_ADMIN_AUTH_HEADER`          | No       | `X-Website-Admin`          | Header the reverse proxy injects for authenticated requests.                            |
+| `WEB_ADMIN_AUTH_SECRET`          | No       | Empty                      | At least 32-character shared value required for non-local access; optional on loopback. |
 
 Per-server timer values are persisted and changed with `/access-config timers`; changing environment defaults does not overwrite existing guild configuration.
 
@@ -71,7 +71,7 @@ The bot's user-facing language is configured separately for each server. New ser
 
 ## Web administration
 
-An optional web interface is available at `/` on the bot's web-admin listener when `WEB_ADMIN_AUTH_SECRET` is configured. It can edit per-server language and timers, role/channel mappings, and post request panels. Discord credentials, including the bot token and application/server IDs, remain in `.env` and are not accessible or editable through the web interface.
+An optional web interface is available at `/` on the bot's web-admin listener. It can edit per-server language and timers, role/channel mappings, and post request panels. When bound to a loopback address (`localhost`, `127.0.0.1`, or `::1`), it accepts unauthenticated requests made over loopback; a configured auth secret is still required if one is set. For non-local access, `WEB_ADMIN_AUTH_SECRET` is required. Discord credentials, including the bot token and application/server IDs, remain in `.env` and are not accessible or editable through the web interface.
 
 Generate secrets, for example:
 
@@ -79,7 +79,7 @@ Generate secrets, for example:
 openssl rand -hex 32
 ```
 
-Generate a value for `WEB_ADMIN_AUTH_SECRET` using `openssl rand -hex 32`. The web service is disabled when the auth secret is blank. The default listener is localhost-only. For a reverse proxy running in another container, set `WEB_ADMIN_HOST=0.0.0.0` and keep the bot and proxy on a private Docker network; do not publish port 8787 publicly. Configure the proxy to require the existing website login, **remove any client-supplied `X-Website-Admin` header**, and inject the configured `WEB_ADMIN_AUTH_SECRET` value to the upstream on every request. Forward the original `Host` header and strip the website mount prefix before proxying (for example, map `/bot-settings/` to upstream `/`); the bot also checks same-origin on state-changing browser requests. Use HTTPS between users and the proxy.
+For local testing, the default listener (`127.0.0.1`) needs no auth secret; open `http://localhost:8787`. Unauthenticated access is allowed only when both the configured bind address and actual connection are loopback. For a reverse proxy running in another container, set `WEB_ADMIN_HOST=0.0.0.0` and configure `WEB_ADMIN_AUTH_SECRET` using `openssl rand -hex 32`. Keep the bot and proxy on a private Docker network; do not publish port 8787 publicly. Configure the proxy to require the existing website login, **remove any client-supplied `X-Website-Admin` header**, and inject the configured `WEB_ADMIN_AUTH_SECRET` value to the upstream on every request. Forward the original `Host` header and strip the website mount prefix before proxying (for example, map `/bot-settings/` to upstream `/`); the bot also checks same-origin on state-changing browser requests. Use HTTPS between users and the proxy.
 
 The interface lists only servers the bot is currently connected to. Server settings are persisted in SQLite and take effect immediately. Keep Discord credentials in `.env`; do not embed the web-admin auth secret in browser code or expose the upstream listener directly to the internet.
 

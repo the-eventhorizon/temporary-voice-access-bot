@@ -20,7 +20,12 @@ configured value has the wrong shape.
 | `WEB_ADMIN_HOST`                 | Defaults to `127.0.0.1`                                  | Listener bind address for the optional web interface.                       |
 | `WEB_ADMIN_PORT`                 | Defaults to `8787`                                       | Listener port.                                                              |
 | `WEB_ADMIN_AUTH_HEADER`          | Defaults to `X-Website-Admin`                            | Trusted header that the authenticated reverse proxy injects.                |
-| `WEB_ADMIN_AUTH_SECRET`          | Empty disables the interface; otherwise 32+ characters   | Shared upstream authentication secret, never sent to browser JavaScript.    |
+| `WEB_ADMIN_AUTH_SECRET`          | Optional; when set, at least 32 characters               | Required for non-loopback connections; never sent to browser JavaScript.    |
+
+With the default loopback bind (`127.0.0.1`), the web interface works without
+an auth secret for local connections. A configured secret remains required
+even for local connections. Non-loopback binds require a secret and should
+only be used behind a trusted reverse proxy.
 
 Environment timer values seed a guild's SQLite settings the first time that
 guild is read/initialized. They do not overwrite persisted values on later
