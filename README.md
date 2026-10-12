@@ -75,7 +75,7 @@ The bot's user-facing language is configured separately for each server. New ser
 - `/access-status` displays pending requests, live grants, deadlines, and cleanup problems.
 - `/access-cancel id:<request-or-grant-id>` cancels a pending request or revokes a temporary grant.
 
-All `/access-config`, `/access-status`, and `/access-cancel` operations require the Discord Administrator permission. Configuration also validates channel types, managed/privileged roles, and bot role hierarchy. An approval message pings only the requested role. Members can approve or deny only while holding that exact requested role and currently occupying the request's target voice channel. Both conditions are rechecked when they click.
+All `/access-config`, `/access-status`, and `/access-cancel` operations require the Discord Administrator permission. Configuration also validates channel types, managed/privileged roles, and bot role hierarchy. An approval message pings only members currently in the requested voice channel who hold the requested role (up to Discord's 100-user mention limit); it never pings the entire role. Members can approve or deny only while holding that exact requested role and currently occupying the request's target voice channel. Both conditions are rechecked when they click.
 
 Repeated requests for the same role are rate-limited for 30 seconds, including after a prior request has been decided.
 

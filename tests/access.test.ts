@@ -459,6 +459,25 @@ function makeApprovalHarness(approverVoiceChannel = "voice-1") {
     roles: { cache: new Collection([["role-1", approverRole]]) },
     voice: { channelId: approverVoiceChannel },
   };
+  const secondEligibleApprover = {
+    id: "approver-2",
+    roles: { cache: new Collection([["role-1", approverRole]]) },
+    voice: { channelId: "voice-1" },
+  };
+  const memberWithoutAccessRole = {
+    id: "member-without-role",
+    roles: { cache: new Collection<string, Role>() },
+    voice: { channelId: "voice-1" },
+  };
+  const targetVoiceChannel = {
+    id: "voice-1",
+    type: ChannelType.GuildVoice,
+    members: new Collection([
+      ["approver-1", approver],
+      ["approver-2", secondEligibleApprover],
+      ["member-without-role", memberWithoutAccessRole],
+    ]),
+  };
   const requesterRoles = new Collection<string, Role>();
   let addRoleCalls = 0;
   const requester = {
@@ -480,7 +499,7 @@ function makeApprovalHarness(approverVoiceChannel = "voice-1") {
   const guild = {
     id: "guild-1",
     channels: {
-      fetch: async () => ({ id: "voice-1", type: ChannelType.GuildVoice }),
+      fetch: async () => targetVoiceChannel,
     },
     members: {
       me: botMember,
@@ -548,6 +567,33 @@ test("approvers outside the exact target voice channel cannot decide", async (co
   assert.match(harness.replies[0] ?? "", /target voice channel/i);
 });
 
+test("ineligible approve and deny clicks leave the request available to eligible approvers", async (context) => {
+  const harness = makeApprovalHarness("voice-2");
+  context.after(harness.cleanup);
+  harness.database.setRequestMessageId(
+    "request-approval",
+    "approval-channel",
+    "approval-message",
+  );
+
+  await harness.workflow.handleButton(harness.button("accept"));
+  await harness.workflow.handleButton(harness.button("deny"));
+  assert.equal(
+    harness.database.getRequest("request-approval")?.status,
+    "pending",
+  );
+  assert.equal(harness.addRoleCalls, 0);
+  assert.equal(harness.deletedMessages, 0);
+
+  harness.moveApproverTo("voice-1");
+  await harness.workflow.handleButton(harness.button("deny"));
+  assert.equal(
+    harness.database.getRequest("request-approval")?.status,
+    "denied",
+  );
+  assert.equal(harness.deletedMessages, 0);
+});
+
 test("simultaneous eligible decisions produce one winning decision", async (context) => {
   const harness = makeApprovalHarness();
   context.after(harness.cleanup);
@@ -592,7 +638,7 @@ test("accepted and denied approval messages are deleted after 30 seconds", async
   }
 });
 
-test("approval message pings only the requested access role", async (context) => {
+test("approval message pings only role holders currently in the target voice channel", async (context) => {
   const harness = makeApprovalHarness();
   context.after(harness.cleanup);
   let payload:
@@ -612,9 +658,15 @@ test("approval message pings only the requested access role", async (context) =>
     } as unknown as GuildTextBasedChannel,
     "Scrim Access",
   );
-  assert.equal(payload?.content, "<@&role-1>\nNew temporary access request");
-  assert.deepEqual(payload?.allowedMentions?.roles, ["role-1"]);
-  assert.deepEqual(payload?.allowedMentions?.users, ["user-1"]);
+  assert.equal(
+    payload?.content,
+    "<@approver-1> <@approver-2>\nNew temporary access request",
+  );
+  assert.equal(payload?.allowedMentions?.roles, undefined);
+  assert.deepEqual(payload?.allowedMentions?.users, [
+    "approver-1",
+    "approver-2",
+  ]);
 });
 
 test("eligible approval grants the role and persists the initial-join deadline", async (context) => {

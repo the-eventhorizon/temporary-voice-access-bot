@@ -55,9 +55,10 @@ export class ApprovalWorkflow {
     roleName: string,
   ): Promise<string> {
     const language = this.database.getGuildConfig(request.guildId).language;
-    const approverRoleId = request.roleId;
+    const approverIds = await this.getEligibleApproverIds(request);
+    const mentions = approverIds.map((userId) => `<@${userId}>`).join(" ");
     const message = await channel.send({
-      content: `<@&${approverRoleId}>\n${translate(language, "approvalPingText")}`,
+      content: `${mentions ? `${mentions}\n` : ""}${translate(language, "approvalPingText")}`,
       embeds: [
         new EmbedBuilder()
           .setTitle(translate(language, "approvalTitle"))
@@ -87,13 +88,49 @@ export class ApprovalWorkflow {
       ],
       components: approvalComponents(request.id, false, language),
       allowedMentions: {
-        users: [request.requesterId],
-        roles: [approverRoleId],
+        users: approverIds,
       },
     });
     this.database.setRequestMessageId(request.id, channel.id, message.id);
     this.schedule(request.id, request.expiresAt);
     return message.id;
+  }
+
+  private async getEligibleApproverIds(
+    request: AccessRequest,
+  ): Promise<string[]> {
+    try {
+      const guild = await this.client.guilds.fetch(request.guildId);
+      const channel = await guild.channels.fetch(request.targetChannelId);
+      if (
+        !channel ||
+        (channel.type !== ChannelType.GuildVoice &&
+          channel.type !== ChannelType.GuildStageVoice)
+      ) {
+        log("warn", "Could not find target voice channel to notify approvers", {
+          requestId: request.id,
+          guildId: request.guildId,
+          channelId: request.targetChannelId,
+        });
+        return [];
+      }
+      return channel.members
+        .filter((member) => member.roles.cache.has(request.roleId))
+        .map((member) => member.id)
+        .slice(0, 100);
+    } catch (error) {
+      log(
+        "warn",
+        "Could not fetch eligible approvers for request notification",
+        {
+          requestId: request.id,
+          guildId: request.guildId,
+          channelId: request.targetChannelId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      return [];
+    }
   }
 
   async handleButton(interaction: ButtonInteraction): Promise<void> {

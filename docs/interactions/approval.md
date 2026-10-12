@@ -17,11 +17,13 @@ The locale is read from the request guild configuration:
 
 Resolved or expired requests use the same IDs with both buttons disabled.
 
-`postRequest(request, channel, roleName)` posts a localized embed showing requester,
-requested role, target channel, expiration, request ID, and pending status. It
-mentions only the requested access role and explicitly allows only that role
-mention plus the requester mention. It then persists the approval channel and
-message IDs and schedules request expiry.
+`postRequest(request, channel, roleName)` posts a localized embed showing
+requester, requested role, target channel, expiration, request ID, and pending
+status. Before posting, it fetches the target voice channel and selects members
+currently in it who hold the requested access role. It pings only those users,
+with a maximum of 100 mentions; it never pings the entire role. If the channel
+cannot be fetched, the bot logs a warning and posts without notifying anyone.
+The approval message IDs are persisted and request expiry is scheduled.
 
 After an approval or denial, the decision is shown with disabled buttons for
 30 seconds, then the approval message is deleted. The deletion deadline is
@@ -38,7 +40,9 @@ administrator-cancelled requests are not automatically deleted.
 2. Acknowledge ephemerally, load the request, verify guild and pending status,
    and immediately expire it if its persisted deadline has elapsed.
 3. Fetch the clicking member. Require the requested access role and current
-   presence in the exact target voice channel.
+   presence in the exact target voice channel. An ineligible click only gets
+   an ephemeral rejection; it does not change the request or disable its
+   buttons, so an eligible member can still decide it.
 4. For Deny, atomically apply `denied`; if another decision/expiry won, report
    that no decision was made. On success disable the buttons and record who
    denied.
