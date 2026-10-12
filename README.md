@@ -118,7 +118,7 @@ Keep the `data` directory on persistent storage and run only one bot process aga
 Common issues:
 
 - **Commands do not appear:** verify `DISCORD_APPLICATION_ID`, bot invitation scope `applications.commands`, and (for guild registration) `DISCORD_DEFAULT_GUILD_ID`.
-- **Requests cannot be posted:** grant the bot View Channel, Send Messages, Embed Links, and Read Message History in the requested voice channel's attached text chat.
+- **Requests cannot be posted:** grant the bot View Channel, Send Messages, Embed Links, and Read Message History (and COnnect for Voice channels) in the requested voice channel's attached text chat.
 - **Roles cannot be granted or removed:** grant Manage Roles and move the bot's highest role above every managed role.
 - **No one can decide a request:** ensure a member has the requested access role and is currently in the exact target voice channel.
 - **Member state is unavailable:** enable the Server Members privileged intent in the Developer Portal and retain the configured gateway intents.
