@@ -24,6 +24,7 @@ import { canAssignRole } from "../src/services/role-policy.js";
 import { ApprovalWorkflow } from "../src/interactions/approval.js";
 import { InteractionHandler } from "../src/interactions/handler.js";
 import { localizedGrantState, translate } from "../src/localization.js";
+import { createAdminServer, type AdminConfig } from "../src/web/admin.js";
 
 const makeDatabase = () => {
   const directory = mkdtempSync(join(tmpdir(), "access-bot-test-"));
@@ -112,6 +113,65 @@ test("guild language defaults to English and persists changes", (context) => {
     localizedGrantState("de", "awaiting_initial_join"),
     "Wartet auf ersten Beitritt",
   );
+});
+
+test("web admin requires trusted proxy auth and exposes no credential management", async () => {
+  const { database, cleanup } = makeDatabase();
+  const authSecret = "test-proxy-secret-that-is-long-enough";
+  const adminConfig: AdminConfig = {
+    host: "127.0.0.1",
+    port: 0,
+    authHeader: "X-Website-Admin",
+    authSecret,
+  };
+  const server = createAdminServer({
+    config: adminConfig,
+    database,
+    client: { guilds: { cache: new Collection() } } as unknown as Client,
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const headers = {
+    "content-type": "application/json",
+    "X-Website-Admin": authSecret,
+    origin: baseUrl,
+  };
+  try {
+    const unauthorized = await fetch(`${baseUrl}/api/bootstrap`);
+    assert.equal(unauthorized.status, 401);
+
+    const bootstrap = await fetch(`${baseUrl}/api/bootstrap`, {
+      headers: { "X-Website-Admin": authSecret },
+    });
+    const bootstrapBody = await bootstrap.text();
+    assert.equal(bootstrap.status, 200);
+    assert.deepEqual(JSON.parse(bootstrapBody), { guilds: [] });
+
+    const pageResponse = await fetch(`${baseUrl}/`, {
+      headers: { "X-Website-Admin": authSecret },
+    });
+    const pageBody = await pageResponse.text();
+    assert.equal(pageBody.includes("bot token"), false);
+    assert.equal(pageBody.includes("/api/credentials"), false);
+
+    const badOrigin = await fetch(`${baseUrl}/api/unknown`, {
+      method: "PUT",
+      headers: { ...headers, origin: "https://attacker.example" },
+      body: "{}",
+    });
+    assert.equal(badOrigin.status, 403);
+    const noCredentialEndpoint = await fetch(`${baseUrl}/api/credentials`, {
+      headers: { "X-Website-Admin": authSecret },
+    });
+    assert.equal(noCredentialEndpoint.status, 404);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    cleanup();
+  }
 });
 
 test("requests are unique per member and role while pending", (context) => {
@@ -477,6 +537,9 @@ function makeApprovalHarness(approverVoiceChannel = "voice-1") {
       ["approver-2", secondEligibleApprover],
       ["member-without-role", memberWithoutAccessRole],
     ]),
+    isTextBased: () => true,
+    permissionsFor: () => ({ has: () => true }),
+    send: async () => ({ id: "approval-message" }),
   };
   const requesterRoles = new Collection<string, Role>();
   let addRoleCalls = 0;
@@ -650,7 +713,7 @@ test("approval message pings only role holders currently in the target voice cha
   await harness.workflow.postRequest(
     harness.database.getRequest("request-approval")!,
     {
-      id: "approval-channel",
+      id: "voice-1",
       send: async (message: typeof payload) => {
         payload = message;
         return { id: "posted-message" };
@@ -667,6 +730,10 @@ test("approval message pings only role holders currently in the target voice cha
     "approver-1",
     "approver-2",
   ]);
+  assert.equal(
+    harness.database.getRequest("request-approval")?.messageChannelId,
+    "voice-1",
+  );
 });
 
 test("eligible approval grants the role and persists the initial-join deadline", async (context) => {
@@ -700,14 +767,21 @@ test("request panel selects a voice channel and derives its unique role", async 
     { id: "voice-1", name: "Scrim One", type: ChannelType.GuildVoice },
     { id: "voice-2", name: "Scrim Two", type: ChannelType.GuildStageVoice },
   ];
-  let postedApproval = false;
+  let postedApprovalChannel: string | null = null;
   const panelChannel = {
     id: "panel-channel",
     guildId: "guild-1",
     isTextBased: () => true,
     permissionsFor: () => ({ has: () => true }),
+    send: async () => ({ id: "panel-message" }),
+  };
+  const approvalVoiceChannel = {
+    ...voiceChannels[1]!,
+    members: new Collection(),
+    isTextBased: () => true,
+    permissionsFor: () => ({ has: () => true }),
     send: async () => {
-      postedApproval = true;
+      postedApprovalChannel = "voice-2";
       return { id: "approval-message" };
     },
   };
@@ -738,7 +812,9 @@ test("request panel selects a voice channel and derives its unique role", async 
       fetch: async (id: string) =>
         id === "panel-channel"
           ? panelChannel
-          : (voiceChannels.find((channel) => channel.id === id) ?? null),
+          : id === "voice-2"
+            ? approvalVoiceChannel
+            : (voiceChannels.find((channel) => channel.id === id) ?? null),
     },
   } as unknown as Guild;
   const client = { guilds: { fetch: async () => guild } } as unknown as Client;
@@ -766,7 +842,12 @@ test("request panel selects a voice channel and derives its unique role", async 
     /request for \*\*Scrim Spectator\*\* in <#voice-2> was sent/,
   );
   assert.equal(database.listPendingRequests()[0]?.targetChannelId, "voice-2");
-  assert.equal(postedApproval, true);
+  assert.equal(postedApprovalChannel, "voice-2");
+  assert.equal(
+    database.getRequest(database.listPendingRequests()[0]!.id)
+      ?.messageChannelId,
+    "voice-2",
+  );
 });
 
 test("an approver who leaves the target VC before accepting is rejected", async (context) => {

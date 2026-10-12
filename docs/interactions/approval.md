@@ -23,7 +23,8 @@ status. Before posting, it fetches the target voice channel and selects members
 currently in it who hold the requested access role. It pings only those users,
 with a maximum of 100 mentions; it never pings the entire role. If the channel
 cannot be fetched, the bot logs a warning and posts without notifying anyone.
-The approval message IDs are persisted and request expiry is scheduled.
+The message is posted to the target voice channel's attached text chat. The
+approval message IDs are persisted and request expiry is scheduled.
 
 After an approval or denial, the decision is shown with disabled buttons for
 30 seconds, then the approval message is deleted. The deletion deadline is
@@ -79,6 +80,5 @@ concurrent clicks from winning.
 
 ## Operational note
 
-The channel where the request began is stored with the request, so status
-updates and cleanup notices use that originating channel rather than a
-server-wide approval-channel configuration.
+The target voice channel's attached text chat is stored with the approval
+message. Message updates and cleanup notices therefore use that same chat.

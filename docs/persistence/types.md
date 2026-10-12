@@ -36,14 +36,14 @@ services. It contains no runtime logic.
 Contains the guild ID, persisted UI language (`en` or `de`), initial-join
 timeout, departure grace, and request expiration durations. Values are per
 guild. Approval-message channel is intentionally not a guild setting: each
-request records the originating text channel in `AccessRequest`.
+request records its target voice channel's text chat in `AccessRequest`.
 
 ### `AccessRequest`
 
 Stores unique request ID, guild/requester/role/target-channel IDs, status,
 creation and expiration times (Unix milliseconds), approval message channel
-and message IDs, deciding approver ID, and decision timestamp. Message IDs may
-be null before posting succeeds.
+(the target voice channel's text chat) and message IDs, deciding approver ID,
+and decision timestamp. Message IDs may be null before posting succeeds.
 
 ### `TemporaryGrant`
 

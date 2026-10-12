@@ -32,10 +32,13 @@ Migrations run in array order inside individual transactions:
    `approver_roles` and `guild_config.approval_channel_id`.
 2. Drop the separate `approver_roles` table after approvers became the
    requested access role.
-3. Drop `approval_channel_id` after requests began posting in their originating
-   text channel.
+3. Drop `approval_channel_id` after approval routing moved away from a
+   server-wide configured text channel.
 4. Add the per-guild language column, defaulting existing and new servers to
    English.
+5. Create the temporary bot-settings table from an earlier web-admin version.
+6. Drop that table; Discord credentials remain environment-only and are not
+   persisted by the bot.
 
 The version is advanced only with the migration transaction. Existing
 installations retain their other configuration and request history.

@@ -23,6 +23,7 @@ environment defaults for a newly initialized guild, followed by:
 
 See [`persistence/database.md`](persistence/database.md),
 [`localization.md`](localization.md),
+[`web/admin.md`](web/admin.md),
 [`services/grant-lifecycle.md`](services/grant-lifecycle.md),
 [`interactions/approval.md`](interactions/approval.md), and
 [`interactions/handler.md`](interactions/handler.md) for those modules'
@@ -42,6 +43,10 @@ Removing a command from the builder and restarting replaces the registered
 set, but Discord clients can cache removed command schemas temporarily.
 
 ## Startup and recovery
+
+The optional authenticated web admin listener starts alongside the Discord
+client and exposes guild settings only. Discord credentials are required in
+the environment and are not managed or persisted through the web interface.
 
 On `ClientReady`, the application logs the bot identity and then attempts, in
 order:

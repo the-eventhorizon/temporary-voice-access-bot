@@ -31,14 +31,14 @@ const english = {
   requestCooldown:
     "Please wait 30 seconds before submitting another request for this role.",
   requestChannelUnavailable:
-    "This channel cannot be used for approval messages.",
+    "The target voice channel's chat is unavailable for approval messages.",
   requestChannelPermissions:
-    "The bot needs View Channel, Send Messages, Embed Links, and Read Message History in this channel.",
+    "The bot needs View Channel, Send Messages, Embed Links, and Read Message History in the target voice channel's chat.",
   duplicateRequest: "You already have a pending request for this role.",
   requestSent:
     "Your request for **{role}** in <#{channel}> was sent. It expires <t:{expires}:R>.",
   postFailed:
-    "The request could not be posted in this channel. Please contact an administrator.",
+    "The request could not be posted in the target voice channel's chat. Please contact an administrator.",
   adminOnly: "Administrator permission is required.",
   languageInvalid: "Choose English or German.",
   languageEnglishSet: "Language set to English.",
@@ -63,7 +63,7 @@ const english = {
   timersUpdated:
     "Timers updated: join {join}s, departure grace {grace}s, request expiration {expiration}s.",
   configApprovalRouting:
-    "Approval requests are posted where the request is started.",
+    "Approval requests are posted in the target voice channel's text chat.",
   configInitialTimer:
     "Initial join: {join}s; departure grace: {grace}s; request expiration: {expiration}s",
   configMappings: "Role mappings: {mappings}",
@@ -113,7 +113,6 @@ const english = {
     "• `{id}` <@{user}> <@&{role}> <#{channel}> expires <t:{expires}:R>",
   ownershipUncertainError: " (cleanup ownership uncertain)",
   cleanupError: " (cleanup error)",
-  grantExpiredMemberLeft: "Your temporary access to <#{channel}> has ended.",
   cleanupFailureNotice:
     "Temporary access cleanup failed for grant `{grant}` (<@{user}>, <@&{role}>). Cleanup will be retried; inspect with `/access-status`. Error: {error}",
 } as const;
@@ -152,14 +151,14 @@ const german: Record<TranslationKey, string> = {
   requestCooldown:
     "Bitte warte 30 Sekunden, bevor du erneut Zugriff auf diese Rolle anfragst.",
   requestChannelUnavailable:
-    "Dieser Kanal kann nicht für Genehmigungsnachrichten verwendet werden.",
+    "Der Chat des Ziel-Sprachkanals ist für Genehmigungsnachrichten nicht verfügbar.",
   requestChannelPermissions:
-    "Der Bot benötigt in diesem Kanal die Berechtigungen „Kanal ansehen“, „Nachrichten senden“, „Links einbetten“ und „Nachrichtenverlauf anzeigen“.",
+    "Der Bot benötigt im Chat des Ziel-Sprachkanals die Berechtigungen „Kanal ansehen“, „Nachrichten senden“, „Links einbetten“ und „Nachrichtenverlauf anzeigen“.",
   duplicateRequest: "Du hast bereits eine offene Anfrage für diese Rolle.",
   requestSent:
     "Deine Anfrage für **{role}** in <#{channel}> wurde gesendet. Sie läuft <t:{expires}:R> ab.",
   postFailed:
-    "Die Anfrage konnte nicht in diesem Kanal gepostet werden. Bitte wende dich an einen Administrator.",
+    "Die Anfrage konnte nicht im Chat des Ziel-Sprachkanals gepostet werden. Bitte wende dich an einen Administrator.",
   adminOnly: "Die Administrator-Berechtigung ist erforderlich.",
   languageInvalid: "Wähle Englisch oder Deutsch.",
   languageConfiguration: "Sprache: {language}",
@@ -187,7 +186,7 @@ const german: Record<TranslationKey, string> = {
   timersUpdated:
     "Timer aktualisiert: Beitritt {join}s, Karenzzeit nach Verlassen {grace}s, Anfrageablauf {expiration}s.",
   configApprovalRouting:
-    "Genehmigungsanfragen werden in dem Kanal gepostet, in dem die Anfrage gestartet wurde.",
+    "Genehmigungsanfragen werden im Chat des Ziel-Sprachkanals gepostet.",
   configInitialTimer:
     "Erstbeitritt: {join}s; Karenzzeit nach Verlassen: {grace}s; Anfrageablauf: {expiration}s",
   configMappings: "Rollenzuordnungen: {mappings}",
@@ -237,8 +236,6 @@ const german: Record<TranslationKey, string> = {
     "• `{id}` <@{user}> <@&{role}> <#{channel}> läuft <t:{expires}:R> ab",
   ownershipUncertainError: " (unklare Rollenzugehörigkeit)",
   cleanupError: " (Bereinigungsfehler)",
-  grantExpiredMemberLeft:
-    "Dein temporärer Zugang zu <#{channel}> ist abgelaufen.",
   cleanupFailureNotice:
     "Die Bereinigung des temporären Zugangs für Freigabe `{grant}` (<@{user}>, <@&{role}>) ist fehlgeschlagen. Sie wird erneut versucht; Details mit `/access-status`. Fehler: {error}",
 };

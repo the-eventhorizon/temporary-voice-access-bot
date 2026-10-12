@@ -134,7 +134,6 @@ export class InteractionHandler {
       interaction.user.id,
       interaction.options.getString("role", true),
       interaction.options.getChannel("channel")?.id,
-      interaction.channelId ?? undefined,
     );
     await interaction.editReply(response);
   }
@@ -144,7 +143,6 @@ export class InteractionHandler {
     requesterId: string,
     roleId: string,
     selectedChannelId?: string,
-    requestChannelId?: string,
   ): Promise<string> {
     const role = guild.roles.cache.get(roleId);
     const botMember = guild.members.me ?? (await guild.members.fetchMe());
@@ -194,16 +192,10 @@ export class InteractionHandler {
       return this.t(guild.id, "requestCooldown");
     }
     const config = this.database.getGuildConfig(guild.id);
-    const approvalChannel = requestChannelId
-      ? await guild.channels.fetch(requestChannelId).catch(() => null)
-      : null;
-    if (
-      !isTextChannel(approvalChannel) ||
-      approvalChannel.guildId !== guild.id
-    ) {
+    if (!isTextChannel(targetChannel)) {
       return this.t(guild.id, "requestChannelUnavailable");
     }
-    const approvalPermissions = approvalChannel.permissionsFor(botMember);
+    const approvalPermissions = targetChannel.permissionsFor(botMember);
     if (
       !approvalPermissions?.has(PermissionFlagsBits.ViewChannel) ||
       !approvalPermissions.has(PermissionFlagsBits.SendMessages) ||
@@ -239,7 +231,7 @@ export class InteractionHandler {
       return this.t(guild.id, "duplicateRequest");
     }
     try {
-      await this.approvals.postRequest(request, approvalChannel, role.name);
+      await this.approvals.postRequest(request, targetChannel, role.name);
       return this.t(guild.id, "requestSent", {
         role: role.name,
         channel: targetChannelId,
@@ -382,7 +374,6 @@ export class InteractionHandler {
       interaction.user.id,
       roleId,
       targetChannelId,
-      sourceChannelId,
     );
     await interaction.update({ content: response, components: [] });
   }

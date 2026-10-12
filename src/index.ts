@@ -7,6 +7,7 @@ import { InteractionHandler } from "./interactions/handler.js";
 import { GrantLifecycle } from "./services/grant-lifecycle.js";
 import { log } from "./logger.js";
 import { translate } from "./localization.js";
+import { createAdminServer, startAdminServer } from "./web/admin.js";
 
 const client = new Client({
   intents: [
@@ -21,6 +22,7 @@ const database = new AccessDatabase(config.DATABASE_PATH, {
   requestExpirationSeconds: config.REQUEST_EXPIRATION_SECONDS,
   language: "en",
 });
+const discordToken = config.DISCORD_TOKEN;
 const lifecycle = new GrantLifecycle(client, database);
 const approvals = new ApprovalWorkflow(client, database, lifecycle);
 const interactions = new InteractionHandler(
@@ -142,10 +144,26 @@ client.on(Events.GuildRoleDelete, (role) => {
 });
 
 let shuttingDown = false;
+let adminServer: ReturnType<typeof createAdminServer> | undefined;
+if (config.WEB_ADMIN_AUTH_SECRET) {
+  adminServer = createAdminServer({
+    config: {
+      host: config.WEB_ADMIN_HOST,
+      port: config.WEB_ADMIN_PORT,
+      authHeader: config.WEB_ADMIN_AUTH_HEADER,
+      authSecret: config.WEB_ADMIN_AUTH_SECRET,
+    },
+    database,
+    client,
+  });
+  startAdminServer(adminServer, config.WEB_ADMIN_HOST, config.WEB_ADMIN_PORT);
+}
+
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   log("info", "Shutting down", { signal });
+  adminServer?.close();
   client.destroy();
   database.close();
 }
@@ -153,7 +171,7 @@ async function shutdown(signal: string): Promise<void> {
 process.once("SIGINT", () => void shutdown("SIGINT"));
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
-client.login(config.DISCORD_TOKEN).catch((error: unknown) => {
+client.login(discordToken).catch((error: unknown) => {
   const errorMessage = error instanceof Error ? error.message : String(error);
   const isDisallowedIntent = errorMessage
     .toLocaleLowerCase()

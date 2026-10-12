@@ -474,20 +474,6 @@ export class GrantLifecycle {
       `Temporary voice access ${terminalState}: ${grant.id}`,
     );
     this.database.updateGrant(grant.id, terminalState, null, Date.now());
-    try {
-      await member.send(
-        translate(
-          this.database.getGuildConfig(grant.guildId).language,
-          "grantExpiredMemberLeft",
-          { channel: grant.authorizedChannelIds[0] ?? grant.id },
-        ),
-      );
-    } catch {
-      log("debug", "Could not notify member of access cleanup", {
-        grantId: grant.id,
-        userId: grant.requesterId,
-      });
-    }
   }
 
   private clearTimer(grantId: string): void {

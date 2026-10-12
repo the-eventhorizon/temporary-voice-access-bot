@@ -105,6 +105,5 @@ reported to the text channel recorded with the original request.
 - `onRoleDelete()` ends grants for a deleted access role.
 - `cancel()` safely attempts manual revocation and retains/schedules failures.
 
-Member DMs after cleanup are best effort and use the guild's configured
-language. Failure to send a DM does not undo the successful role cleanup.
-Administrator cleanup-failure notices are localized using that same setting.
+The bot does not DM members when their temporary access ends. Administrator
+cleanup-failure notices are posted to the original request channel.

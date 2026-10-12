@@ -70,6 +70,13 @@ const migrations = [
   "DROP TABLE IF EXISTS approver_roles;",
   "ALTER TABLE guild_config DROP COLUMN approval_channel_id;",
   "ALTER TABLE guild_config ADD COLUMN language TEXT NOT NULL DEFAULT 'en' CHECK (language IN ('en', 'de'));",
+  `CREATE TABLE bot_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    token_ciphertext TEXT,
+    application_id TEXT,
+    default_guild_id TEXT
+  );`,
+  "DROP TABLE IF EXISTS bot_settings;",
 ];
 
 function parseRequest(row: Record<string, unknown>): AccessRequest {

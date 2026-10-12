@@ -44,24 +44,44 @@ Invite the application with the `bot` and `applications.commands` OAuth scopes a
 - Read Message History
 - Manage Roles
 
-The bot's highest role must be above every requestable access role. Do not grant Administrator. The channel where a request is started (the command channel or the panel channel) must permit the bot to view, send, embed, and read message history. Enable the Server Members privileged intent in the Developer Portal before running the bot.
+The bot's highest role must be above every requestable access role. Do not grant Administrator. The target voice channel's attached text chat must permit the bot to view, send, embed, and read message history. Enable the Server Members privileged intent in the Developer Portal before running the bot.
 
 ## Environment variables
 
-| Variable                         | Required | Default                    | Description                                                      |
-| -------------------------------- | -------- | -------------------------- | ---------------------------------------------------------------- |
-| `DISCORD_TOKEN`                  | Yes      | —                          | Bot token; keep it private and out of source control.            |
-| `DISCORD_APPLICATION_ID`         | Yes      | —                          | Discord application/client ID.                                   |
-| `DISCORD_DEFAULT_GUILD_ID`       | No       | Global commands            | Optional guild for rapid command registration.                   |
-| `DATABASE_PATH`                  | No       | `./data/access-bot.sqlite` | Persistent SQLite database file.                                 |
-| `INITIAL_JOIN_TIMEOUT_SECONDS`   | No       | `90`                       | Default initial-join timeout for newly configured guilds.        |
-| `DEPARTURE_GRACE_PERIOD_SECONDS` | No       | `90`                       | Default grace period for newly configured guilds.                |
-| `REQUEST_EXPIRATION_SECONDS`     | No       | `300`                      | Default approval-request expiration for newly configured guilds. |
-| `LOG_LEVEL`                      | No       | `info`                     | `debug`, `info`, `warn`, or `error`.                             |
+| Variable                         | Required | Default                    | Description                                                                            |
+| -------------------------------- | -------- | -------------------------- | -------------------------------------------------------------------------------------- |
+| `DISCORD_TOKEN`                  | Yes      | —                          | Bot token; keep it private and out of source control.                                  |
+| `DISCORD_APPLICATION_ID`         | Yes      | —                          | Discord application/client ID.                                                         |
+| `DISCORD_DEFAULT_GUILD_ID`       | No       | Global commands            | Optional guild for rapid command registration.                                         |
+| `DATABASE_PATH`                  | No       | `./data/access-bot.sqlite` | Persistent SQLite database file.                                                       |
+| `INITIAL_JOIN_TIMEOUT_SECONDS`   | No       | `90`                       | Default initial-join timeout for newly configured guilds.                              |
+| `DEPARTURE_GRACE_PERIOD_SECONDS` | No       | `90`                       | Default grace period for newly configured guilds.                                      |
+| `REQUEST_EXPIRATION_SECONDS`     | No       | `300`                      | Default approval-request expiration for newly configured guilds.                       |
+| `LOG_LEVEL`                      | No       | `info`                     | `debug`, `info`, `warn`, or `error`.                                                   |
+| `WEB_ADMIN_HOST`                 | No       | `127.0.0.1`                | Address for the optional web admin service. Use `0.0.0.0` only behind a trusted proxy. |
+| `WEB_ADMIN_PORT`                 | No       | `8787`                     | Port for the optional web admin service.                                               |
+| `WEB_ADMIN_AUTH_HEADER`          | No       | `X-Website-Admin`          | Header the reverse proxy injects for authenticated requests.                           |
+| `WEB_ADMIN_AUTH_SECRET`          | No       | Disabled                   | At least 32-character shared value checked on every web request.                       |
 
 Per-server timer values are persisted and changed with `/access-config timers`; changing environment defaults does not overwrite existing guild configuration.
 
 The bot's user-facing language is configured separately for each server. New server configurations default to English; use `/access-config language language:Deutsch` or choose **English** to switch it. The setting is stored in SQLite and applies to generated command responses, approval messages, and lifecycle notifications. Existing request-panel messages are not edited when the language changes, but new interactions use the current setting.
+
+`DISCORD_TOKEN` and `DISCORD_APPLICATION_ID` must be configured in `.env` and are never managed by the web interface.
+
+## Web administration
+
+An optional web interface is available at `/` on the bot's web-admin listener when `WEB_ADMIN_AUTH_SECRET` is configured. It can edit per-server language and timers, role/channel mappings, and post request panels. Discord credentials, including the bot token and application/server IDs, remain in `.env` and are not accessible or editable through the web interface.
+
+Generate secrets, for example:
+
+```sh
+openssl rand -hex 32
+```
+
+Generate a value for `WEB_ADMIN_AUTH_SECRET` using `openssl rand -hex 32`. The web service is disabled when the auth secret is blank. The default listener is localhost-only. For a reverse proxy running in another container, set `WEB_ADMIN_HOST=0.0.0.0` and keep the bot and proxy on a private Docker network; do not publish port 8787 publicly. Configure the proxy to require the existing website login, **remove any client-supplied `X-Website-Admin` header**, and inject the configured `WEB_ADMIN_AUTH_SECRET` value to the upstream on every request. Forward the original `Host` header and strip the website mount prefix before proxying (for example, map `/bot-settings/` to upstream `/`); the bot also checks same-origin on state-changing browser requests. Use HTTPS between users and the proxy.
+
+The interface lists only servers the bot is currently connected to. Server settings are persisted in SQLite and take effect immediately. Keep Discord credentials in `.env`; do not embed the web-admin auth secret in browser code or expose the upstream listener directly to the internet.
 
 ## Commands
 
@@ -79,7 +99,7 @@ All `/access-config`, `/access-status`, and `/access-cancel` operations require 
 
 Repeated requests for the same role are rate-limited for 30 seconds, including after a prior request has been decided.
 
-Approval requests are posted in the channel where `/request-access` is invoked, or in the channel containing the request panel when a member uses its button. After an approval or denial, the message displays the decision for 30 seconds and is then deleted to reduce channel clutter. This cleanup resumes after a restart; if Discord temporarily rejects deletion, the bot retries. Expired and administrator-cancelled requests remain in the channel. `/access-config view` reports the routing behavior; there is no separate approval-channel setting. The panel is a regular bot message and its button remains usable across bot restarts. Run `/access-config request-panel` again to post another copy in a different channel. Discord select menus support at most 25 options, so the panel displays up to 25 configured voice channels.
+Approval requests are posted in the attached text chat of the requested voice channel, whether submitted with `/request-access` or the request panel. The command or panel channel is only where the request starts; the bot needs View Channel, Send Messages, Embed Links, and Read Message History in the target voice channel's chat. After an approval or denial, the message displays the decision for 30 seconds and is then deleted to reduce channel clutter. This cleanup resumes after a restart; if Discord temporarily rejects deletion, the bot retries. Expired and administrator-cancelled requests remain in the channel. The panel is a regular bot message and its button remains usable across bot restarts. Run `/access-config request-panel` again to post another copy in a different text channel. Discord select menus support at most 25 options, so the panel displays up to 25 configured voice channels.
 
 Discord only permits autocomplete for string, integer, and number slash-command options—not role-typed options. Therefore the request role is selected from Discord's dynamic string autocomplete, populated exclusively from the configured roles, and the selected role ID is revalidated on command execution. This is not treated as authorization.
 
@@ -98,7 +118,7 @@ Keep the `data` directory on persistent storage and run only one bot process aga
 Common issues:
 
 - **Commands do not appear:** verify `DISCORD_APPLICATION_ID`, bot invitation scope `applications.commands`, and (for guild registration) `DISCORD_DEFAULT_GUILD_ID`.
-- **Requests cannot be posted:** grant the bot View Channel, Send Messages, Embed Links, and Read Message History in the channel where the request command or panel is used.
+- **Requests cannot be posted:** grant the bot View Channel, Send Messages, Embed Links, and Read Message History in the requested voice channel's attached text chat.
 - **Roles cannot be granted or removed:** grant Manage Roles and move the bot's highest role above every managed role.
 - **No one can decide a request:** ensure a member has the requested access role and is currently in the exact target voice channel.
 - **Member state is unavailable:** enable the Server Members privileged intent in the Developer Portal and retain the configured gateway intents.

@@ -7,8 +7,8 @@ cancellation. Approval decisions themselves are handled by
 
 ## Shared request validation
 
-The private `submitRequest(guild, requesterId, roleId, selectedChannelId,
-requestChannelId)` routine is used by both `/request-access` and the panel so
+The private `submitRequest(guild, requesterId, roleId, selectedChannelId)`
+routine is used by both `/request-access` and the panel so
 the entry points share authorization:
 
 1. The bot must have Manage Roles; the selected role must exist, be configured,
@@ -18,10 +18,12 @@ the entry points share authorization:
 3. The target must still exist and be a voice or stage channel.
 4. Fetch the requester; reject if they already have the role, have a live grant,
    or requested the same role in the last 30 seconds.
-5. Fetch the text channel in which the command or panel was used. Require
-   View Channel, Send Messages, Embed Links, and Read Message History.
+5. Use the target voice channel's attached text chat for approval posting.
+   Require View Channel, Send Messages, Embed Links, and Read Message History
+   in that chat. The command/panel source channel is not used for approval
+   routing.
 6. Create a unique pending record with a configurable expiration, then post
-   the approval message in that same channel.
+   the approval message in the target voice channel's text chat.
 
 Duplicate pending requests are rejected by both application checks and the
 database unique index. If posting fails after inserting the request, the
@@ -36,8 +38,8 @@ Autocomplete is for convenience, not authorization: `submitRequest()` checks
 the choice again.
 
 `requestAccess()` defers an ephemeral response, invokes the shared submission
-routine with the optional voice channel and command's text-channel ID, then
-edits the ephemeral response with the outcome.
+routine with the optional target voice channel, then edits the ephemeral
+response with the outcome.
 
 ## Request-panel interaction
 
@@ -85,6 +87,7 @@ ownership-uncertain preservation or retryable cleanup.
 ## Interaction helpers
 
 `isVoiceChannel()` accepts guild voice and stage channels. `isTextChannel()`
-guards text-based channels with a send method for approval/panel posting.
+guards text-based channels with a send method; target voice and stage channel
+chat is used for approvals, while request panels are posted to text channels.
 `isSupportedApprovalChannel()` is an exported type guard wrapping that same
 text-channel predicate.
