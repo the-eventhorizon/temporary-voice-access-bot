@@ -1,10 +1,11 @@
 # `src/web/admin.ts`
 
 This module serves the settings interface and JSON API with Node's built-in
-HTTP server. When bound to a loopback address, unauthenticated access is
-allowed only for connections whose local listener and peer addresses are both
-loopback. If an auth secret is configured, it is still required for local
-requests. Non-loopback access requires the configured secret, compared using
+HTTP server. `APP_ENV` supports `local`, `dev`, and `prod` (default: `local`). In `local`
+and `dev`, the secret may be omitted; then unauthenticated access is allowed
+only for connections where both the listener and peer addresses are loopback.
+If a secret is configured, it is required on all requests. `prod` requires a
+secret of at least 32 characters at startup. Secrets are compared using
 constant-time byte comparison. A reverse proxy must remove client-supplied
 copies of the configured header and inject its own value only after the
 website's existing authentication succeeds.
@@ -21,8 +22,9 @@ from both the UI and API. Configure those values only through environment
 variables; the web admin does not return, persist, or modify them.
 
 `createAdminServer()` accepts an injected Discord client/database and can be
-tested without binding a public listener. The interface starts without a
-secret only when `WEB_ADMIN_HOST` is localhost or a loopback IP address.
+tested without binding a public listener. In `local` and `dev`, the interface
+starts without a secret only when `WEB_ADMIN_HOST` is localhost or a loopback
+IP address. In `prod`, configuration validation always requires a secret.
 API payloads are size limited,
 Discord IDs and timer values are validated, roles are checked against the
 bot's role hierarchy, and failures are logged without request bodies or

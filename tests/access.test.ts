@@ -119,6 +119,75 @@ test("guild language defaults to English and persists changes", (context) => {
   );
 });
 
+test("APP_ENV controls whether web-admin authentication is required", async () => {
+  const environmentKeys = [
+    "APP_ENV",
+    "DISCORD_TOKEN",
+    "DISCORD_APPLICATION_ID",
+    "WEB_ADMIN_AUTH_SECRET",
+  ] as const;
+  const originalValues = new Map(
+    environmentKeys.map((key) => [key, process.env[key]]),
+  );
+  process.env.APP_ENV = "local";
+  process.env.DISCORD_TOKEN = "test-token";
+  process.env.DISCORD_APPLICATION_ID = "test-application-id";
+  process.env.WEB_ADMIN_AUTH_SECRET = "";
+  try {
+    const { configSchema } = await import("../src/config.js");
+    const baseConfig = {
+      DISCORD_TOKEN: "test-token",
+      DISCORD_APPLICATION_ID: "test-application-id",
+    };
+    assert.equal(
+      configSchema.safeParse({
+        ...baseConfig,
+        APP_ENV: "local",
+        WEB_ADMIN_AUTH_SECRET: "",
+      }).success,
+      true,
+    );
+    assert.equal(
+      configSchema.safeParse({
+        ...baseConfig,
+        APP_ENV: "dev",
+        WEB_ADMIN_AUTH_SECRET: "",
+      }).success,
+      true,
+    );
+    assert.equal(
+      configSchema.safeParse({
+        ...baseConfig,
+        APP_ENV: "prod",
+        WEB_ADMIN_AUTH_SECRET: "",
+      }).success,
+      false,
+    );
+    assert.equal(
+      configSchema.safeParse({
+        ...baseConfig,
+        APP_ENV: "prod",
+        WEB_ADMIN_AUTH_SECRET: "a".repeat(32),
+      }).success,
+      true,
+    );
+    assert.equal(
+      configSchema.safeParse({
+        ...baseConfig,
+        APP_ENV: "staging",
+        WEB_ADMIN_AUTH_SECRET: "",
+      }).success,
+      false,
+    );
+  } finally {
+    for (const key of environmentKeys) {
+      const value = originalValues.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("web admin requires trusted proxy auth and exposes no credential management", async () => {
   const { database, cleanup } = makeDatabase();
   const authSecret = "test-proxy-secret-that-is-long-enough";

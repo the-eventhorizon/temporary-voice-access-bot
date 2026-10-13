@@ -7,25 +7,27 @@ configured value has the wrong shape.
 
 ## Settings
 
-| Property                         | Validation and fallback                                  | Used for                                                                    |
-| -------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `DISCORD_TOKEN`                  | Required non-empty string                                | Gateway login and REST authentication.                                      |
-| `DISCORD_APPLICATION_ID`         | Required non-empty string                                | Slash-command registration target.                                          |
-| `DISCORD_DEFAULT_GUILD_ID`       | Optional string, defaults to empty                       | When present, register commands to this guild; otherwise register globally. |
-| `DATABASE_PATH`                  | Non-empty string, defaults to `./data/access-bot.sqlite` | SQLite file path.                                                           |
-| `INITIAL_JOIN_TIMEOUT_SECONDS`   | Coerced positive integer, defaults to `90`               | Initial timer default for new guild records.                                |
-| `DEPARTURE_GRACE_PERIOD_SECONDS` | Coerced positive integer, defaults to `90`               | Departure timer default for new guild records.                              |
-| `REQUEST_EXPIRATION_SECONDS`     | Coerced positive integer, defaults to `300`              | Approval-request expiration default for new guild records.                  |
-| `LOG_LEVEL`                      | `debug`, `info`, `warn`, or `error`; defaults to `info`  | Minimum severity emitted by the logger.                                     |
-| `WEB_ADMIN_HOST`                 | Defaults to `127.0.0.1`                                  | Listener bind address for the optional web interface.                       |
-| `WEB_ADMIN_PORT`                 | Defaults to `8787`                                       | Listener port.                                                              |
-| `WEB_ADMIN_AUTH_HEADER`          | Defaults to `X-Website-Admin`                            | Trusted header that the authenticated reverse proxy injects.                |
-| `WEB_ADMIN_AUTH_SECRET`          | Optional; when set, at least 32 characters               | Required for non-loopback connections; never sent to browser JavaScript.    |
+| Property                         | Validation and fallback                                                | Used for                                                                    |
+| -------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `APP_ENV`                        | `local`, `dev`, or `prod`; defaults to `local`                         | Selects deployment mode; `prod` requires a web-admin auth secret.           |
+| `DISCORD_TOKEN`                  | Required non-empty string                                              | Gateway login and REST authentication.                                      |
+| `DISCORD_APPLICATION_ID`         | Required non-empty string                                              | Slash-command registration target.                                          |
+| `DISCORD_DEFAULT_GUILD_ID`       | Optional string, defaults to empty                                     | When present, register commands to this guild; otherwise register globally. |
+| `DATABASE_PATH`                  | Non-empty string, defaults to `./data/access-bot.sqlite`               | SQLite file path.                                                           |
+| `INITIAL_JOIN_TIMEOUT_SECONDS`   | Coerced positive integer, defaults to `90`                             | Initial timer default for new guild records.                                |
+| `DEPARTURE_GRACE_PERIOD_SECONDS` | Coerced positive integer, defaults to `90`                             | Departure timer default for new guild records.                              |
+| `REQUEST_EXPIRATION_SECONDS`     | Coerced positive integer, defaults to `300`                            | Approval-request expiration default for new guild records.                  |
+| `LOG_LEVEL`                      | `debug`, `info`, `warn`, or `error`; defaults to `info`                | Minimum severity emitted by the logger.                                     |
+| `WEB_ADMIN_HOST`                 | Defaults to `127.0.0.1`                                                | Listener bind address for the optional web interface.                       |
+| `WEB_ADMIN_PORT`                 | Defaults to `8787`                                                     | Listener port.                                                              |
+| `WEB_ADMIN_AUTH_HEADER`          | Defaults to `X-Website-Admin`                                          | Trusted header that the authenticated reverse proxy injects.                |
+| `WEB_ADMIN_AUTH_SECRET`          | Optional in `local`/`dev`; required in `prod`; 32+ characters when set | Web-admin authentication; never sent to browser JavaScript.                 |
 
-With the default loopback bind (`127.0.0.1`), the web interface works without
-an auth secret for local connections. A configured secret remains required
-even for local connections. Non-loopback binds require a secret and should
-only be used behind a trusted reverse proxy.
+In `local` and `dev`, an auth secret may be omitted. Without a secret,
+unauthenticated access is limited to loopback-bound listeners and loopback
+clients. If configured, the secret is required for every request. In `prod`,
+startup fails unless `WEB_ADMIN_AUTH_SECRET` is set to at least 32 characters.
+Non-loopback binds should only be used behind a trusted reverse proxy.
 
 Environment timer values seed a guild's SQLite settings the first time that
 guild is read/initialized. They do not overwrite persisted values on later

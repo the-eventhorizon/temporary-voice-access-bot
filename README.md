@@ -50,6 +50,7 @@ The bot's highest role must be above every requestable access role. Do not grant
 
 | Variable                         | Required | Default                    | Description                                                                             |
 | -------------------------------- | -------- | -------------------------- | --------------------------------------------------------------------------------------- |
+| `APP_ENV`                        | No       | `local`                    | `local`, `dev`, or `prod`; production requires the web-admin auth secret.               |
 | `DISCORD_TOKEN`                  | Yes      | —                          | Bot token; keep it private and out of source control.                                   |
 | `DISCORD_APPLICATION_ID`         | Yes      | —                          | Discord application/client ID.                                                          |
 | `DISCORD_DEFAULT_GUILD_ID`       | No       | Global commands            | Optional guild for rapid command registration.                                          |
@@ -61,7 +62,7 @@ The bot's highest role must be above every requestable access role. Do not grant
 | `WEB_ADMIN_HOST`                 | No       | `127.0.0.1`                | Address for the optional web admin service. Use `0.0.0.0` only behind a trusted proxy.  |
 | `WEB_ADMIN_PORT`                 | No       | `8787`                     | Port for the optional web admin service.                                                |
 | `WEB_ADMIN_AUTH_HEADER`          | No       | `X-Website-Admin`          | Header the reverse proxy injects for authenticated requests.                            |
-| `WEB_ADMIN_AUTH_SECRET`          | No       | Empty                      | At least 32-character shared value required for non-local access; optional on loopback. |
+| `WEB_ADMIN_AUTH_SECRET`          | No       | Empty                      | 32+ characters when set; mandatory in `prod`, and for non-loopback access.                |
 
 Per-server timer values are persisted and changed with `/access-config timers`; changing environment defaults does not overwrite existing guild configuration.
 
@@ -71,7 +72,7 @@ The bot's user-facing language is configured separately for each server. New ser
 
 ## Web administration
 
-An optional web interface is available at `/` on the bot's web-admin listener. It can edit per-server language and timers, role/channel mappings, and post request panels. When bound to a loopback address (`localhost`, `127.0.0.1`, or `::1`), it accepts unauthenticated requests made over loopback; a configured auth secret is still required if one is set. For non-local access, `WEB_ADMIN_AUTH_SECRET` is required. Discord credentials, including the bot token and application/server IDs, remain in `.env` and are not accessible or editable through the web interface.
+An optional web interface is available at `/` on the bot's web-admin listener. It can edit per-server language and timers, role/channel mappings, and post request panels. Set `APP_ENV` to `local`, `dev`, or `prod` (default: `local`). In `local` and `dev`, a web auth secret is optional; in `prod`, `WEB_ADMIN_AUTH_SECRET` is strictly required at startup and must be at least 32 characters. When bound to a loopback address (`localhost`, `127.0.0.1`, or `::1`) without a secret, the interface accepts requests made over loopback only. Discord credentials, including the bot token and application/server IDs, remain in `.env` and are not accessible or editable through the web interface.
 
 Generate secrets, for example:
 
@@ -79,7 +80,7 @@ Generate secrets, for example:
 openssl rand -hex 32
 ```
 
-For local testing, the default listener (`127.0.0.1`) needs no auth secret; open `http://localhost:8787`. Unauthenticated access is allowed only when both the configured bind address and actual connection are loopback. For a reverse proxy running in another container, set `WEB_ADMIN_HOST=0.0.0.0` and configure `WEB_ADMIN_AUTH_SECRET` using `openssl rand -hex 32`. Keep the bot and proxy on a private Docker network; do not publish port 8787 publicly. Configure the proxy to require the existing website login, **remove any client-supplied `X-Website-Admin` header**, and inject the configured `WEB_ADMIN_AUTH_SECRET` value to the upstream on every request. Forward the original `Host` header and strip the website mount prefix before proxying (for example, map `/bot-settings/` to upstream `/`); the bot also checks same-origin on state-changing browser requests. Use HTTPS between users and the proxy.
+For local testing, set `APP_ENV=local` and use the default listener (`127.0.0.1`) without an auth secret; open `http://localhost:8787`. Unauthenticated access is allowed only when both the configured bind address and actual connection are loopback. For a reverse proxy running in another container, set `APP_ENV=prod`, `WEB_ADMIN_HOST=0.0.0.0`, and configure `WEB_ADMIN_AUTH_SECRET` using `openssl rand -hex 32`. Keep the bot and proxy on a private Docker network; do not publish port 8787 publicly. Configure the proxy to require the existing website login, **remove any client-supplied `X-Website-Admin` header**, and inject the configured `WEB_ADMIN_AUTH_SECRET` value to the upstream on every request. Forward the original `Host` header and strip the website mount prefix before proxying (for example, map `/bot-settings/` to upstream `/`); the bot also checks same-origin on state-changing browser requests. Use HTTPS between users and the proxy.
 
 The interface lists only servers the bot is currently connected to. Server settings are persisted in SQLite and take effect immediately. Keep Discord credentials in `.env`; do not embed the web-admin auth secret in browser code or expose the upstream listener directly to the internet.
 
