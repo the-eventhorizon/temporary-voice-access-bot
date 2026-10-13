@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { Script } from "node:vm";
 import { ChannelType, Collection } from "discord.js";
 import type {
   ButtonInteraction,
@@ -226,8 +227,27 @@ test("web admin requires trusted proxy auth and exposes no credential management
       headers: { "X-Website-Admin": authSecret },
     });
     const pageBody = await pageResponse.text();
+    const contentSecurityPolicy = pageResponse.headers.get(
+      "content-security-policy",
+    );
+    assert.match(contentSecurityPolicy ?? "", /base-uri 'self'/);
+    assert.match(contentSecurityPolicy ?? "", /img-src 'self' data:/);
     assert.equal(pageBody.includes("bot token"), false);
     assert.equal(pageBody.includes("/api/credentials"), false);
+    assert.equal(pageBody.includes("#ff6700"), true);
+    assert.equal(pageBody.includes('id="uiLanguage"'), true);
+    assert.equal(pageBody.includes('id="serverLanguage"'), true);
+    assert.equal(pageBody.includes('data-theme="dark"'), true);
+    const favicon = pageBody.match(
+      /rel="icon"[^>]+href="data:image\/svg\+xml;base64,([^"]+)"/,
+    )?.[1];
+    assert.ok(favicon);
+    const faviconSvg = Buffer.from(favicon, "base64").toString("utf8");
+    assert.match(faviconSvg, /fill:#ff6700/);
+    assert.match(faviconSvg, /M530\.74,515\.88/);
+    const script = pageBody.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    assert.ok(script);
+    assert.doesNotThrow(() => new Script(script));
 
     const badOrigin = await fetch(`${baseUrl}/api/unknown`, {
       method: "PUT",
