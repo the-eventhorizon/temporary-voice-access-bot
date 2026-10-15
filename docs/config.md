@@ -18,15 +18,17 @@ configured value has the wrong shape.
 | `DEPARTURE_GRACE_PERIOD_SECONDS` | Coerced positive integer, defaults to `90`                             | Departure timer default for new guild records.                              |
 | `REQUEST_EXPIRATION_SECONDS`     | Coerced positive integer, defaults to `300`                            | Approval-request expiration default for new guild records.                  |
 | `LOG_LEVEL`                      | `debug`, `info`, `warn`, or `error`; defaults to `info`                | Minimum severity emitted by the logger.                                     |
-| `WEB_ADMIN_HOST`                 | Defaults to `127.0.0.1`                                                | Listener bind address for the optional web interface.                       |
-| `WEB_ADMIN_PORT`                 | Defaults to `8787`                                                     | Listener port.                                                              |
+| `WEB_ADMIN_HOST`                 | Defaults to `127.0.0.1`; empty with empty port disables the interface  | Listener bind address for the optional web interface.                       |
+| `WEB_ADMIN_PORT`                 | Defaults to `8787`; empty with empty host disables the interface       | Listener port.                                                              |
 | `WEB_ADMIN_AUTH_HEADER`          | Defaults to `X-Website-Admin`                                          | Trusted header that the authenticated reverse proxy injects.                |
 | `WEB_ADMIN_AUTH_SECRET`          | Optional in `local`/`dev`; required in `prod`; 32+ characters when set | Web-admin authentication; never sent to browser JavaScript.                 |
 
 In `local` and `dev`, an auth secret may be omitted. Without a secret,
 unauthenticated access is limited to loopback-bound listeners and loopback
 clients. If configured, the secret is required for every request. In `prod`,
-startup fails unless `WEB_ADMIN_AUTH_SECRET` is set to at least 32 characters.
+startup fails unless `WEB_ADMIN_AUTH_SECRET` is set to at least 32 characters
+when the web interface is enabled. Set both `WEB_ADMIN_HOST` and
+`WEB_ADMIN_PORT` to empty to disable it; setting only one empty is invalid.
 Non-loopback binds should only be used behind a trusted reverse proxy.
 
 Environment timer values seed a guild's SQLite settings the first time that

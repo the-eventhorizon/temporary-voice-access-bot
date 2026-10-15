@@ -175,6 +175,34 @@ test("APP_ENV controls whether web-admin authentication is required", async () =
     assert.equal(
       configSchema.safeParse({
         ...baseConfig,
+        APP_ENV: "prod",
+        WEB_ADMIN_HOST: "",
+        WEB_ADMIN_PORT: "",
+        WEB_ADMIN_AUTH_SECRET: "",
+      }).success,
+      true,
+    );
+    assert.equal(
+      configSchema.safeParse({
+        ...baseConfig,
+        APP_ENV: "local",
+        WEB_ADMIN_HOST: "",
+        WEB_ADMIN_PORT: "8787",
+      }).success,
+      false,
+    );
+    assert.equal(
+      configSchema.safeParse({
+        ...baseConfig,
+        APP_ENV: "local",
+        WEB_ADMIN_HOST: "127.0.0.1",
+        WEB_ADMIN_PORT: "",
+      }).success,
+      false,
+    );
+    assert.equal(
+      configSchema.safeParse({
+        ...baseConfig,
         APP_ENV: "staging",
         WEB_ADMIN_AUTH_SECRET: "",
       }).success,

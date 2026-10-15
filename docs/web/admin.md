@@ -5,7 +5,9 @@ HTTP server. `APP_ENV` supports `local`, `dev`, and `prod` (default: `local`). I
 and `dev`, the secret may be omitted; then unauthenticated access is allowed
 only for connections where both the listener and peer addresses are loopback.
 If a secret is configured, it is required on all requests. `prod` requires a
-secret of at least 32 characters at startup. Secrets are compared using
+secret of at least 32 characters at startup when the interface is enabled.
+Set both `WEB_ADMIN_HOST` and `WEB_ADMIN_PORT` to empty to disable the HTTP
+server entirely; setting only one empty is invalid. Secrets are compared using
 constant-time byte comparison. A reverse proxy must remove client-supplied
 copies of the configured header and inject its own value only after the
 website's existing authentication succeeds.

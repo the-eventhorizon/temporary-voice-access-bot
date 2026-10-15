@@ -21,7 +21,10 @@ export const configSchema = z
     REQUEST_EXPIRATION_SECONDS: z.coerce.number().int().positive().default(300),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
     WEB_ADMIN_HOST: z.string().default("127.0.0.1"),
-    WEB_ADMIN_PORT: z.coerce.number().int().min(1).max(65535).default(8787),
+    WEB_ADMIN_PORT: z.preprocess(
+      (value) => (value === "" ? null : value),
+      z.coerce.number().int().min(1).max(65535).nullable().default(8787),
+    ),
     WEB_ADMIN_AUTH_HEADER: z
       .string()
       .regex(/^[A-Za-z0-9-]+$/)
@@ -29,6 +32,18 @@ export const configSchema = z
     WEB_ADMIN_AUTH_SECRET: z.string().default(""),
   })
   .superRefine((values, context) => {
+    const webAdminDisabled =
+      values.WEB_ADMIN_HOST === "" && values.WEB_ADMIN_PORT === null;
+    const webAdminEnabled =
+      values.WEB_ADMIN_HOST !== "" && values.WEB_ADMIN_PORT !== null;
+    if (!webAdminDisabled && !webAdminEnabled) {
+      context.addIssue({
+        code: "custom",
+        path: ["WEB_ADMIN_HOST"],
+        message:
+          "WEB_ADMIN_HOST and WEB_ADMIN_PORT must both be set or both be empty to disable the web admin",
+      });
+    }
     if (
       values.WEB_ADMIN_AUTH_SECRET &&
       values.WEB_ADMIN_AUTH_SECRET.length < 32
@@ -40,11 +55,16 @@ export const configSchema = z
           "WEB_ADMIN_AUTH_SECRET must contain at least 32 characters when configured",
       });
     }
-    if (values.APP_ENV === "prod" && !values.WEB_ADMIN_AUTH_SECRET) {
+    if (
+      values.APP_ENV === "prod" &&
+      webAdminEnabled &&
+      !values.WEB_ADMIN_AUTH_SECRET
+    ) {
       context.addIssue({
         code: "custom",
         path: ["WEB_ADMIN_AUTH_SECRET"],
-        message: "WEB_ADMIN_AUTH_SECRET is required when APP_ENV is prod",
+        message:
+          "WEB_ADMIN_AUTH_SECRET is required when APP_ENV is prod and web admin is enabled",
       });
     }
   });
