@@ -1,0 +1,17 @@
+services:
+  bot:
+    build: .
+    image: temporary-voice-access-bot:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      APP_ENV: prod
+      DATABASE_PATH: /app/data/access-bot.sqlite
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - access-bot-data:/app/data
+
+volumes:
+  access-bot-data:
